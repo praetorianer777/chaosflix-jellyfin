@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Chaosflix.Api;
@@ -21,8 +22,16 @@ namespace Jellyfin.Plugin.Chaosflix.Channel;
 /// <summary>
 /// Jellyfin channel that provides CCC media content.
 /// </summary>
-public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsLatestMedia
+public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsLatestMedia
 {
+    private const string FolderPopular = "virtual:popular";
+    private const string FolderBrowseByYear = "virtual:years";
+    private const string FolderRecommended = "virtual:recommended";
+    private const string PrefixConference = "conf:";
+    private const string PrefixEvent = "event:";
+    private const string PrefixYear = "year:";
+    private const string PrefixRelated = "related:";
+
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixChannel> _logger;
 
@@ -42,7 +51,7 @@ public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsL
     public string Description => "Chaos Computer Club talks from media.ccc.de";
 
     /// <inheritdoc />
-    public string DataVersion => "4";
+    public string DataVersion => "5";
 
     /// <inheritdoc />
     public string HomePageUrl => "https://media.ccc.de";
@@ -66,7 +75,7 @@ public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsL
             },
             SupportsContentDownloading = true,
             SupportsSortOrderToggle = true,
-            AutoRefreshLevels = 2
+            AutoRefreshLevels = 3
         };
     }
 
@@ -97,16 +106,22 @@ public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsL
 
         if (string.IsNullOrEmpty(query.FolderId))
         {
-            return await GetRootItems(cancellationToken).ConfigureAwait(false);
+            return GetRootItems();
         }
 
-        if (query.FolderId.StartsWith("conf:", StringComparison.Ordinal))
+        return query.FolderId switch
         {
-            var acronym = query.FolderId.Substring(5);
-            return await GetConferenceItems(acronym, cancellationToken).ConfigureAwait(false);
-        }
-
-        return new ChannelItemResult();
+            FolderPopular => await GetPopularItems(cancellationToken).ConfigureAwait(false),
+            FolderBrowseByYear => await GetYearFolders(cancellationToken).ConfigureAwait(false),
+            FolderRecommended => await GetRecommendedItems(cancellationToken).ConfigureAwait(false),
+            _ when query.FolderId.StartsWith(PrefixYear, StringComparison.Ordinal)
+                => await GetConferencesByYear(query.FolderId[5..], cancellationToken).ConfigureAwait(false),
+            _ when query.FolderId.StartsWith(PrefixConference, StringComparison.Ordinal)
+                => await GetConferenceItems(query.FolderId[5..], cancellationToken).ConfigureAwait(false),
+            _ when query.FolderId.StartsWith(PrefixRelated, StringComparison.Ordinal)
+                => await GetRelatedItems(query.FolderId[8..], cancellationToken).ConfigureAwait(false),
+            _ => new ChannelItemResult()
+        };
     }
 
     /// <inheritdoc />
@@ -114,7 +129,7 @@ public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsL
     {
         _logger.LogDebug("GetChannelItemMediaInfo: {Id}", id);
 
-        var eventGuid = id.StartsWith("event:", StringComparison.Ordinal) ? id.Substring(6) : id;
+        var eventGuid = id.StartsWith(PrefixEvent, StringComparison.Ordinal) ? id[6..] : id;
         var cccEvent = await _apiClient.GetEventAsync(eventGuid, cancellationToken).ConfigureAwait(false);
 
         if (cccEvent?.Recordings == null)
@@ -131,36 +146,177 @@ public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsL
     {
         var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
 
-        // Get the most recently updated conference
-        var latest = conferences
+        // Get the 3 most recently updated conferences for a broader latest view
+        var recentConferences = conferences
             .Where(c => c.EventLastReleasedAt != null)
             .OrderByDescending(c => c.EventLastReleasedAt)
-            .FirstOrDefault();
+            .Take(3)
+            .ToList();
 
-        if (latest == null)
+        var allEvents = new List<CccEvent>();
+        foreach (var conf in recentConferences)
         {
-            return Enumerable.Empty<ChannelItemInfo>();
+            var detail = await _apiClient.GetConferenceAsync(conf.Acronym, cancellationToken).ConfigureAwait(false);
+            if (detail?.Events != null)
+            {
+                allEvents.AddRange(detail.Events);
+            }
         }
 
-        var conference = await _apiClient.GetConferenceAsync(latest.Acronym, cancellationToken).ConfigureAwait(false);
-
-        return (conference?.Events ?? new List<CccEvent>())
+        return allEvents
             .OrderByDescending(e => e.ReleaseDate ?? e.Date)
             .Take(20)
             .Select(MapEventToChannelItem);
     }
 
-    private async Task<ChannelItemResult> GetRootItems(CancellationToken cancellationToken)
+    // ── Root ──────────────────────────────────────────────
+
+    private static ChannelItemResult GetRootItems()
+    {
+        var items = new List<ChannelItemInfo>
+        {
+            new ChannelItemInfo
+            {
+                Name = "🔥 Popular Talks",
+                Id = FolderPopular,
+                Type = ChannelItemType.Folder,
+                FolderType = ChannelFolderType.Container,
+                Overview = "Most viewed talks across all conferences"
+            },
+            new ChannelItemInfo
+            {
+                Name = "⭐ Recommended",
+                Id = FolderRecommended,
+                Type = ChannelItemType.Folder,
+                FolderType = ChannelFolderType.Container,
+                Overview = "Highly rated recent talks"
+            },
+            new ChannelItemInfo
+            {
+                Name = "📅 Browse by Year",
+                Id = FolderBrowseByYear,
+                Type = ChannelItemType.Folder,
+                FolderType = ChannelFolderType.Container,
+                Overview = "All conferences grouped by year"
+            }
+        };
+
+        return new ChannelItemResult
+        {
+            Items = items,
+            TotalRecordCount = items.Count
+        };
+    }
+
+    // ── Popular ──────────────────────────────────────────
+
+    private async Task<ChannelItemResult> GetPopularItems(CancellationToken cancellationToken)
     {
         var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
 
-        var items = conferences
+        // Fetch events from the 5 most recent conferences
+        var recentConferences = conferences
             .Where(c => c.EventLastReleasedAt != null)
+            .OrderByDescending(c => c.EventLastReleasedAt)
+            .Take(5)
+            .ToList();
+
+        var allEvents = new List<CccEvent>();
+        foreach (var conf in recentConferences)
+        {
+            var detail = await _apiClient.GetConferenceAsync(conf.Acronym, cancellationToken).ConfigureAwait(false);
+            if (detail?.Events != null)
+            {
+                allEvents.AddRange(detail.Events);
+            }
+        }
+
+        var items = allEvents
+            .OrderByDescending(e => e.ViewCount)
+            .Take(50)
+            .Select(MapEventToChannelItem)
+            .ToList();
+
+        return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
+    }
+
+    // ── Recommended (high views + recent) ────────────────
+
+    private async Task<ChannelItemResult> GetRecommendedItems(CancellationToken cancellationToken)
+    {
+        var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
+
+        var recentConferences = conferences
+            .Where(c => c.EventLastReleasedAt != null)
+            .OrderByDescending(c => c.EventLastReleasedAt)
+            .Take(3)
+            .ToList();
+
+        var allEvents = new List<CccEvent>();
+        foreach (var conf in recentConferences)
+        {
+            var detail = await _apiClient.GetConferenceAsync(conf.Acronym, cancellationToken).ConfigureAwait(false);
+            if (detail?.Events != null)
+            {
+                allEvents.AddRange(detail.Events);
+            }
+        }
+
+        // Score: views * recency boost
+        var now = DateTimeOffset.UtcNow;
+        var items = allEvents
+            .Where(e => e.ViewCount > 100)
+            .OrderByDescending(e =>
+            {
+                var ageDays = Math.Max(1, (now - (e.ReleaseDate ?? e.Date ?? now)).TotalDays);
+                return e.ViewCount / Math.Sqrt(ageDays);
+            })
+            .Take(30)
+            .Select(MapEventToChannelItem)
+            .ToList();
+
+        return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
+    }
+
+    // ── Year grouping ────────────────────────────────────
+
+    private async Task<ChannelItemResult> GetYearFolders(CancellationToken cancellationToken)
+    {
+        var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
+
+        var years = conferences
+            .Where(c => c.EventLastReleasedAt != null)
+            .Select(c => c.EventLastReleasedAt!.Value.Year)
+            .Distinct()
+            .OrderByDescending(y => y)
+            .Select(y => new ChannelItemInfo
+            {
+                Name = y.ToString(CultureInfo.InvariantCulture),
+                Id = $"{PrefixYear}{y}",
+                Type = ChannelItemType.Folder,
+                FolderType = ChannelFolderType.Container
+            })
+            .ToList();
+
+        return new ChannelItemResult { Items = years, TotalRecordCount = years.Count };
+    }
+
+    private async Task<ChannelItemResult> GetConferencesByYear(string yearStr, CancellationToken cancellationToken)
+    {
+        if (!int.TryParse(yearStr, out var year))
+        {
+            return new ChannelItemResult();
+        }
+
+        var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
+
+        var items = conferences
+            .Where(c => c.EventLastReleasedAt != null && c.EventLastReleasedAt.Value.Year == year)
             .OrderByDescending(c => c.EventLastReleasedAt)
             .Select(c => new ChannelItemInfo
             {
                 Name = c.Title,
-                Id = $"conf:{c.Acronym}",
+                Id = $"{PrefixConference}{c.Acronym}",
                 Type = ChannelItemType.Folder,
                 FolderType = ChannelFolderType.Container,
                 ImageUrl = c.LogoUrl,
@@ -169,12 +325,10 @@ public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsL
             })
             .ToList();
 
-        return new ChannelItemResult
-        {
-            Items = items,
-            TotalRecordCount = items.Count
-        };
+        return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
     }
+
+    // ── Conference events ────────────────────────────────
 
     private async Task<ChannelItemResult> GetConferenceItems(string acronym, CancellationToken cancellationToken)
     {
@@ -189,43 +343,73 @@ public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsL
             .Select(MapEventToChannelItem)
             .ToList();
 
-        return new ChannelItemResult
-        {
-            Items = items,
-            TotalRecordCount = items.Count
-        };
+        return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
     }
+
+    // ── Related talks ────────────────────────────────────
+
+    private async Task<ChannelItemResult> GetRelatedItems(string eventGuid, CancellationToken cancellationToken)
+    {
+        var cccEvent = await _apiClient.GetEventAsync(eventGuid, cancellationToken).ConfigureAwait(false);
+
+        if (cccEvent?.Related == null || cccEvent.Related.Count == 0)
+        {
+            return new ChannelItemResult();
+        }
+
+        var relatedGuids = cccEvent.Related
+            .OrderByDescending(r => r.Weight)
+            .Take(15)
+            .Select(r => r.EventGuid)
+            .ToList();
+
+        var items = new List<ChannelItemInfo>();
+        foreach (var guid in relatedGuids)
+        {
+            var related = await _apiClient.GetEventAsync(guid, cancellationToken).ConfigureAwait(false);
+            if (related != null)
+            {
+                items.Add(MapEventToChannelItem(related));
+            }
+        }
+
+        return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
+    }
+
+    // ── Mapping ──────────────────────────────────────────
 
     private static ChannelItemInfo MapEventToChannelItem(CccEvent e)
     {
         var info = new ChannelItemInfo
         {
             Name = e.Title,
-            Id = $"event:{e.Guid}",
+            Id = $"{PrefixEvent}{e.Guid}",
             Type = ChannelItemType.Media,
             MediaType = ChannelMediaType.Video,
             ContentType = ChannelMediaContentType.Clip,
             ImageUrl = e.PosterUrl ?? e.ThumbUrl,
-            Overview = e.Description,
+            Overview = BuildOverview(e),
             RunTimeTicks = (long)e.Duration * TimeSpan.TicksPerSecond,
             DateCreated = e.Date?.DateTime ?? e.ReleaseDate?.DateTime,
             CommunityRating = e.ViewCount > 0
                 ? Math.Min(10f, (float)Math.Log10(e.ViewCount) * 2)
                 : null,
             HomePageUrl = e.FrontendLink,
-            OriginalTitle = e.Subtitle
+            OriginalTitle = e.Subtitle,
+            SeriesName = e.ConferenceTitle
         };
 
-        // Tags as genres
+        // Tags as genres (filter noise)
         foreach (var tag in e.Tags.Where(t =>
             !int.TryParse(t, out _) &&
             !t.StartsWith("Stage", StringComparison.OrdinalIgnoreCase) &&
+            !YearPattern().IsMatch(t) &&
             t.Length > 2))
         {
             info.Genres.Add(tag);
         }
 
-        // Speakers as people
+        // Speakers
         foreach (var person in e.Persons)
         {
             info.People.Add(new MediaBrowser.Controller.Entities.PersonInfo
@@ -238,9 +422,46 @@ public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsL
         return info;
     }
 
+    private static string BuildOverview(CccEvent e)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrEmpty(e.ConferenceTitle))
+        {
+            parts.Add(e.ConferenceTitle);
+        }
+
+        if (e.Persons.Count > 0)
+        {
+            parts.Add($"Speaker: {string.Join(", ", e.Persons)}");
+        }
+
+        if (e.ViewCount > 0)
+        {
+            parts.Add($"{e.ViewCount:N0} views");
+        }
+
+        if (!string.IsNullOrEmpty(e.OriginalLanguage))
+        {
+            parts.Add($"Language: {e.OriginalLanguage}");
+        }
+
+        var header = string.Join(" · ", parts);
+        var desc = e.Description ?? string.Empty;
+
+        // Add "Related Talks" hint if event has related content
+        if (e.Related != null && e.Related.Count > 0)
+        {
+            desc += $"\n\n→ {e.Related.Count} related talks available";
+        }
+
+        return string.IsNullOrEmpty(header) ? desc : $"{header}\n\n{desc}";
+    }
+
+    // ── Recording selection ──────────────────────────────
+
     private static List<MediaSourceInfo> SelectRecordings(List<CccRecording> recordings, PluginConfiguration config)
     {
-        // Filter to video recordings only
         var videoRecordings = recordings
             .Where(r => r.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
             .ToList();
@@ -250,10 +471,8 @@ public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsL
             return new List<MediaSourceInfo>();
         }
 
-        // Determine preferred MIME type
         var preferredMime = config.PreferredFormat == VideoFormat.WebM ? "video/webm" : "video/mp4";
 
-        // Score and sort recordings by preference
         var sorted = videoRecordings
             .OrderByDescending(r => r.MimeType.Equals(preferredMime, StringComparison.OrdinalIgnoreCase) ? 1 : 0)
             .ThenByDescending(r =>
@@ -304,4 +523,7 @@ public class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsL
         var format = r.MimeType.Contains("webm") ? "WebM" : "MP4";
         return $"{quality} {resolution} ({format}) [{r.Language}]";
     }
+
+    [GeneratedRegex(@"^\d{4}c\d$|^\d{4}$")]
+    private static partial Regex YearPattern();
 }
