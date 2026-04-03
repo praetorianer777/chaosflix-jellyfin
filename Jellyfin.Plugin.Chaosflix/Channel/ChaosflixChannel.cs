@@ -93,7 +93,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     {
         return Task.FromResult(new DynamicImageResponse
         {
-            Path = "https://media.ccc.de/images/logo.png",
+            Path = "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/master/assets/logo.svg",
             Protocol = MediaProtocol.Http,
             HasImage = true
         });
