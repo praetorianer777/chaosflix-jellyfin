@@ -1,19 +1,13 @@
-[
-  {
-    "guid": "c4a05f11-4ccc-4b00-bdea-dbeef1337000",
-    "name": "Chaosflix",
-    "description": "Browse and stream Chaos Computer Club conference talks from media.ccc.de directly in Jellyfin.",
-    "overview": "CCC Media Channel",
-    "owner": "chaosflix",
-    "category": "Channels",
-    "versions": [
-      {
-        "version": "0.0.1.0",
-        "changelog": "Initial release",
-        "targetAbi": "10.10.0.0",
-        "sourceUrl": "https://github.com/chaosflix/chaosflix-jellyfin",
-        "timestamp": "2026-04-03T19:00:00Z"
-      }
-    ]
-  }
-]
+{
+  "guid": "c4a05f11-4ccc-4b00-bdea-dbeef1337000",
+  "name": "Chaosflix",
+  "description": "Browse and stream Chaos Computer Club conference talks from media.ccc.de",
+  "overview": "CCC Media Channel for Jellyfin",
+  "owner": "praetorianer777",
+  "category": "Channels",
+  "version": "0.0.1.0",
+  "targetAbi": "10.11.7.0",
+  "status": "Active",
+  "autoUpdate": true,
+  "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg"
+}
