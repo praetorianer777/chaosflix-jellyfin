@@ -37,13 +37,21 @@ Go to **Dashboard → Plugins → Chaosflix** to set:
 
 ## Building
 
-```bash
-# Build in Docker (no local .NET SDK needed)
-docker run --rm -v "$PWD:/src" -w /src \
-  mcr.microsoft.com/dotnet/sdk:9.0 \
-  dotnet build Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj -c Release
+### With Dockerfile (recommended)
 
-# Output: Jellyfin.Plugin.Chaosflix/bin/Release/net9.0/Jellyfin.Plugin.Chaosflix.dll
+```bash
+# Standard build — outputs to ./artifacts/
+docker build --target artifact --output type=local,dest=./artifacts .
+
+# Behind a corporate SSL proxy? Place .crt files in certs/ first:
+cp /usr/local/share/ca-certificates/*.crt certs/
+docker build --target artifact --output type=local,dest=./artifacts .
+```
+
+### Without Docker
+
+```bash
+dotnet publish Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj -c Release -o ./artifacts
 ```
 
 ## How It Works
