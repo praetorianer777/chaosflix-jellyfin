@@ -12,7 +12,7 @@
         "version": "1.1.0.0",
         "changelog": "Add popular/recommended folders, year grouping, related talks, scheduled sync",
         "targetAbi": "10.10.0.0",
-        "sourceUrl": "https://github.com/YOUR_USERNAME/chaosflix-jellyfin/releases/download/v1.1.0/chaosflix-jellyfin-v1.1.0.zip",
+        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v1.1.0/chaosflix-jellyfin-v1.1.0.zip",
         "checksum": "",
         "timestamp": "2026-04-03T20:00:00Z"
       }
