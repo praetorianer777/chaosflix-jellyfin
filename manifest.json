@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/master/assets/logo.svg",
     "versions": [
       {
+        "version": "0.0.3.0",
+        "changelog": "Release v0.0.3",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.3/chaosflix-jellyfin-v0.0.3.zip",
+        "checksum": "ccfe7fc4e67529575ef9bd8b1d7fbb59",
+        "timestamp": "2026-04-03T21:10:22Z"
+      },
+      {
         "version": "0.0.2.0",
         "changelog": "Release v0.0.2",
         "targetAbi": "10.10.0.0",
