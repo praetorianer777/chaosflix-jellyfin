@@ -1,0 +1,10 @@
+bin/
+obj/
+*.dll
+*.pdb
+*.user
+*.suo
+.vs/
+.idea/
+*.nupkg
+artifacts/

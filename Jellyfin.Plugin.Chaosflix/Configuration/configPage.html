@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chaosflix</title>
+</head>
+<body>
+    <div id="ChaosflixConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+         data-require="emby-select">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="ChaosflixConfigForm">
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Chaosflix Settings</h2>
+
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="PreferredQuality">Preferred Quality</label>
+                            <select is="emby-select" id="PreferredQuality" class="emby-select-withcolor">
+                                <option value="High">High (1080p)</option>
+                                <option value="Standard">Standard (576p)</option>
+                            </select>
+                        </div>
+
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="PreferredFormat">Preferred Format</label>
+                            <select is="emby-select" id="PreferredFormat" class="emby-select-withcolor">
+                                <option value="Mp4">MP4 (H.264)</option>
+                                <option value="WebM">WebM (VP9)</option>
+                            </select>
+                        </div>
+
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="PreferredLanguage">Preferred Language</label>
+                            <select is="emby-select" id="PreferredLanguage" class="emby-select-withcolor">
+                                <option value="">Original</option>
+                                <option value="deu">Deutsch</option>
+                                <option value="eng">English</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        var ChaosflixConfig = {
+            pluginUniqueId: 'c4a0sf11-x4cc-cb00-bdea-dbeef1337000'
+        };
+
+        document.querySelector('#ChaosflixConfigPage')
+            .addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(ChaosflixConfig.pluginUniqueId).then(function (config) {
+                    document.querySelector('#PreferredQuality').value = config.PreferredQuality || 'High';
+                    document.querySelector('#PreferredFormat').value = config.PreferredFormat || 'Mp4';
+                    document.querySelector('#PreferredLanguage').value = config.PreferredLanguage || '';
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+        document.querySelector('#ChaosflixConfigForm')
+            .addEventListener('submit', function (e) {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(ChaosflixConfig.pluginUniqueId).then(function (config) {
+                    config.PreferredQuality = document.querySelector('#PreferredQuality').value;
+                    config.PreferredFormat = document.querySelector('#PreferredFormat').value;
+                    config.PreferredLanguage = document.querySelector('#PreferredLanguage').value;
+                    ApiClient.updatePluginConfiguration(ChaosflixConfig.pluginUniqueId, config).then(function () {
+                        Dashboard.processPluginConfigurationUpdateResult();
+                    });
+                });
+                e.preventDefault();
+                return false;
+            });
+    </script>
+</body>
+</html>
