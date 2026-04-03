@@ -27,7 +27,7 @@ All content is sourced from [media.ccc.de](https://media.ccc.de) via their publi
 1. Open Jellyfin **Dashboard → Plugins → Repositories**
 2. Click **Add** and enter:
    - **Name:** `Chaosflix`
-   - **URL:** `https://raw.githubusercontent.com/YOUR_USERNAME/chaosflix-jellyfin/master/manifest.json`
+   - **URL:** `https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/master/manifest.json`
 3. Go to **Catalog → Channels** and install **Chaosflix**
 4. Restart Jellyfin
 5. The **Chaosflix** channel appears under **Home → My Media → Channels**
