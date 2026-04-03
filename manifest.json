@@ -6,47 +6,15 @@
     "overview": "CCC Media Channel for Jellyfin",
     "owner": "chaosflix-jellyfin",
     "category": "Channels",
-    "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/master/assets/logo.svg",
+    "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg",
     "versions": [
       {
         "version": "0.0.1.0",
-        "changelog": "Release v0.0.1",
-        "targetAbi": "10.10.0.0",
+        "changelog": "Initial release — browse conferences, popular/recommended talks, year grouping, related talks, scheduled sync",
+        "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.1/chaosflix-jellyfin-v0.0.1.zip",
         "checksum": "e9e047b09ae960a754d04718b6568e0a",
         "timestamp": "2026-04-03T21:27:40Z"
-      },
-      {
-        "version": "0.0.1.0",
-        "changelog": "Release v0.0.1",
-        "targetAbi": "10.10.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.1/chaosflix-jellyfin-v0.0.1.zip",
-        "checksum": "02108eeaf9bb3cd32a6e0d02ed23361f",
-        "timestamp": "2026-04-03T21:26:54Z"
-      },
-      {
-        "version": "0.0.3.0",
-        "changelog": "Release v0.0.3",
-        "targetAbi": "10.10.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.3/chaosflix-jellyfin-v0.0.3.zip",
-        "checksum": "ccfe7fc4e67529575ef9bd8b1d7fbb59",
-        "timestamp": "2026-04-03T21:10:22Z"
-      },
-      {
-        "version": "0.0.2.0",
-        "changelog": "Release v0.0.2",
-        "targetAbi": "10.10.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.2/chaosflix-jellyfin-v0.0.2.zip",
-        "checksum": "0a6bc551af7bfec99aae00f535f57103",
-        "timestamp": "2026-04-03T20:42:04Z"
-      },
-      {
-        "version": "0.0.2.0",
-        "changelog": "Initial release \u2014 browse conferences, popular/recommended talks, year grouping, related talks",
-        "targetAbi": "10.10.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.2/chaosflix-jellyfin-v0.0.2.zip",
-        "checksum": "",
-        "timestamp": "2026-04-03T20:00:00Z"
       }
     ]
   }

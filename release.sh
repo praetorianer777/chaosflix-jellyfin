@@ -52,7 +52,8 @@ new_version = {
     'checksum': '',
     'timestamp': '${TIMESTAMP}'
 }
-data[0]['versions'].insert(0, new_version)
+# Keep only the new version (clean slate per release)
+data[0]['versions'] = [new_version]
 with open('manifest.json', 'w') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
