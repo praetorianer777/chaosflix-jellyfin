@@ -104,15 +104,43 @@ docker build --target artifact --output type=local,dest=./artifacts .
 dotnet publish Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj -c Release -o ./artifacts
 ```
 
-### Creating a Release ZIP
+### Rebuilding for a new Jellyfin Version
 
-For the plugin repository manifest, create a ZIP with the DLL and meta.json:
+The plugin must be compiled against the same Jellyfin SDK version as your server.
+When you update Jellyfin (e.g. 10.11.6 → 10.12.0), rebuild the plugin:
 
 ```bash
-cd artifacts && zip ../chaosflix-jellyfin-v1.1.0.zip Jellyfin.Plugin.Chaosflix.dll meta.json
+# 1. Check your Jellyfin server version (Dashboard → General)
+#    Example: 10.12.0
+
+# 2. Update the SDK references in the .csproj
+sed -i 's/Version="10.11.7"/Version="10.12.0"/g' \
+    Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj
+
+# 3. Update targetAbi in manifest.json
+sed -i 's/"targetAbi": "10.11.0.0"/"targetAbi": "10.12.0.0"/g' manifest.json
+
+# 4. Build and release
+./release.sh 0.0.2 "Rebuild for Jellyfin 10.12.0"
+git push origin main --tags
+
+# 5. Upload the ZIP to the GitHub Release
+gh release upload v0.0.2 chaosflix-jellyfin-v0.0.2.zip
 ```
 
-Upload this ZIP as a GitHub Release asset and update `sourceUrl` in `manifest.json`.
+> **Tip:** The SDK version on NuGet must match your server.
+> Check available versions: https://www.nuget.org/packages/Jellyfin.Controller
+
+### Creating a Release (automated)
+
+```bash
+./release.sh <version> "<changelog>"
+
+# Example:
+./release.sh 0.0.2 "Rebuild for Jellyfin 10.12"
+```
+
+This updates all version strings, builds, creates the ZIP, and commits + tags.
 
 ## How It Works
 
