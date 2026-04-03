@@ -27,7 +27,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override string Name => "Chaosflix";
 
     /// <inheritdoc />
-    public override Guid Id => Guid.Parse("c4a0s-f11x-4ccc-b00b-deadbeef1337".PadRight(36, '0').Substring(0, 36));
+    public override Guid Id => Guid.Parse("c4a05f11-4ccc-4b00-bdea-dbeef1337000");
 
     /// <inheritdoc />
     public override string Description => "Browse and stream Chaos Computer Club conference talks directly in Jellyfin.";
