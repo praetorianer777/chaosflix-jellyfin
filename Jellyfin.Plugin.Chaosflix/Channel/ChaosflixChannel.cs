@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.Chaosflix.Api;
 using Jellyfin.Plugin.Chaosflix.Api.Models;
 using Jellyfin.Plugin.Chaosflix.Configuration;
+using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Channels;
@@ -36,14 +37,16 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixChannel> _logger;
+    private readonly IServerApplicationHost _appHost;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ChaosflixChannel"/> class.
     /// </summary>
-    public ChaosflixChannel(CccApiClient apiClient, ILogger<ChaosflixChannel> logger)
+    public ChaosflixChannel(CccApiClient apiClient, ILogger<ChaosflixChannel> logger, IServerApplicationHost appHost)
     {
         _apiClient = apiClient;
         _logger = logger;
+        _appHost = appHost;
     }
 
     /// <inheritdoc />
@@ -140,7 +143,8 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         }
 
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-        return SelectRecordings(cccEvent.Recordings, config, eventGuid);
+        var serverUrl = _appHost.GetSmartApiUrl(string.Empty).TrimEnd('/');
+        return SelectRecordings(cccEvent.Recordings, config, eventGuid, serverUrl);
     }
 
     /// <inheritdoc />
@@ -462,7 +466,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     // ── Recording selection ──────────────────────────────
 
-    private static List<MediaSourceInfo> SelectRecordings(List<CccRecording> recordings, PluginConfiguration config, string eventGuid)
+    private static List<MediaSourceInfo> SelectRecordings(List<CccRecording> recordings, PluginConfiguration config, string eventGuid, string serverUrl)
     {
         var videoRecordings = recordings
             .Where(r => r.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
@@ -503,7 +507,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         {
             Id = DeterministicGuid($"{r.RecordingUrl}").ToString("N"),
             Name = FormatRecordingName(r),
-            Path = $"/api/ChaosflixStream/stream/{eventGuid}?recordingFolder={Uri.EscapeDataString(r.Folder)}&language={Uri.EscapeDataString(r.Language)}",
+            Path = $"{serverUrl}/api/ChaosflixStream/stream/{eventGuid}?recordingFolder={Uri.EscapeDataString(r.Folder)}&language={Uri.EscapeDataString(r.Language)}",
             Protocol = MediaProtocol.Http,
             Container = "m3u8",
             Size = (long)r.Size * 1024 * 1024,  // CCC API size is in MB
