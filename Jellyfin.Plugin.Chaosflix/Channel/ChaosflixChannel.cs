@@ -517,11 +517,12 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             Container = DetectContainer(r),
             Size = (long)r.Size * 1024 * 1024,  // CCC API size is in MB
             RunTimeTicks = (long)r.Length * TimeSpan.TicksPerSecond,
+            Bitrate = r.Length > 0 ? (int)((long)r.Size * 1024 * 1024 * 8 / r.Length) : null,
             IsRemote = true,
             ReadAtNativeFramerate = false,
             SupportsDirectStream = true,
-            SupportsDirectPlay = false,
-            SupportsTranscoding = true,
+            SupportsDirectPlay = true,
+            SupportsTranscoding = false,
             MediaStreams = new List<MediaStream>
             {
                 new MediaStream
