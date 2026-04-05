@@ -108,6 +108,42 @@ public class CccApiClient : IDisposable
     /// </summary>
     public void ClearCache() => _cache.Clear();
 
+    /// <summary>
+    /// Resolves a CDN URL by following redirects and returning the final URL.
+    /// CCC CDN (cdn.media.ccc.de) does 302 redirects to mirror servers.
+    /// Some clients (e.g. Android ExoPlayer) struggle with cross-domain redirects.
+    /// </summary>
+    public async Task<string> ResolveRedirectAsync(string url, CancellationToken cancellationToken)
+    {
+        return await _cache.GetOrCreateAsync($"redirect:{url}", TimeSpan.FromHours(2), async ct =>
+        {
+            try
+            {
+                using var noRedirectHandler = new HttpClientHandler { AllowAutoRedirect = false };
+                using var client = new HttpClient(noRedirectHandler);
+                using var request = new HttpRequestMessage(HttpMethod.Head, new Uri(url));
+                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+                    .ConfigureAwait(false);
+
+                if ((int)response.StatusCode is >= 301 and <= 308
+                    && response.Headers.Location is { } location)
+                {
+                    var resolved = location.IsAbsoluteUri
+                        ? location.ToString()
+                        : new Uri(new Uri(url), location).ToString();
+                    _logger.LogDebug("Resolved CDN redirect {Url} -> {Resolved}", url, resolved);
+                    return resolved;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to resolve redirect for {Url}, using original", url);
+            }
+
+            return url;
+        }, cancellationToken);
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {

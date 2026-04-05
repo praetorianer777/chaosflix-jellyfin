@@ -51,7 +51,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     public string Description => "Chaos Computer Club talks from media.ccc.de";
 
     /// <inheritdoc />
-    public string DataVersion => "5";
+    public string DataVersion => "6";
 
     /// <inheritdoc />
     public string HomePageUrl => "https://media.ccc.de";
@@ -138,7 +138,18 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         }
 
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-        return SelectRecordings(cccEvent.Recordings, config);
+        var sources = SelectRecordings(cccEvent.Recordings, config);
+
+        // Resolve CDN redirects — ExoPlayer on Android can't follow cross-domain 302s
+        foreach (var source in sources)
+        {
+            if (!string.IsNullOrEmpty(source.Path) && source.Path.Contains("cdn.media.ccc.de", StringComparison.OrdinalIgnoreCase))
+            {
+                source.Path = await _apiClient.ResolveRedirectAsync(source.Path, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return sources;
     }
 
     /// <inheritdoc />

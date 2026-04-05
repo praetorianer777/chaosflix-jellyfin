@@ -11,6 +11,7 @@ namespace Jellyfin.Plugin.Chaosflix.Api;
 public class MemoryCache
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
 
     /// <summary>
     /// Gets or creates a cached value.
@@ -22,9 +23,25 @@ public class MemoryCache
             return (T)entry.Value;
         }
 
-        var value = await factory(cancellationToken).ConfigureAwait(false);
-        _cache[key] = new CacheEntry(value!, DateTimeOffset.UtcNow.Add(ttl));
-        return value;
+        // Use SemaphoreSlim to prevent stampede on concurrent requests for the same key
+        var gate = _locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Double-check after acquiring lock
+            if (_cache.TryGetValue(key, out entry) && entry.ExpiresAt > DateTimeOffset.UtcNow)
+            {
+                return (T)entry.Value;
+            }
+
+            var value = await factory(cancellationToken).ConfigureAwait(false);
+            _cache[key] = new CacheEntry(value!, DateTimeOffset.UtcNow.Add(ttl));
+            return value;
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     /// <summary>

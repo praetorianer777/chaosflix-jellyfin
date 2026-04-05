@@ -69,11 +69,17 @@ echo ""
 echo "🔨 Building..."
 
 if command -v docker &>/dev/null; then
+    CERT_MOUNT=""
+    if [[ -d "/usr/local/share/ca-certificates" ]]; then
+        CERT_MOUNT="-v /usr/local/share/ca-certificates:/usr/local/share/ca-certificates:ro"
+    fi
+    # shellcheck disable=SC2086
     docker run --rm \
         -v "$(pwd):/src" \
+        ${CERT_MOUNT} \
         -w /src \
         mcr.microsoft.com/dotnet/sdk:9.0 \
-        dotnet publish Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj -c Release -o /src/artifacts 2>&1 | tail -3
+        bash -c "update-ca-certificates 2>/dev/null; dotnet publish Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj -c Release -o /src/artifacts" 2>&1 | tail -3
 else
     dotnet publish Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj -c Release -o ./artifacts 2>&1 | tail -3
 fi
