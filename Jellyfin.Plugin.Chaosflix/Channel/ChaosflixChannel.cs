@@ -518,9 +518,11 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             Size = (long)r.Size * 1024 * 1024,  // CCC API size is in MB
             RunTimeTicks = (long)r.Length * TimeSpan.TicksPerSecond,
             Bitrate = r.Length > 0 ? (int)((long)r.Size * 1024 * 1024 * 8 / r.Length) : null,
+            VideoType = VideoType.VideoFile,
+            DefaultAudioStreamIndex = 1,
             IsRemote = true,
             ReadAtNativeFramerate = false,
-            SupportsDirectStream = true,
+            SupportsDirectStream = false,
             SupportsDirectPlay = true,
             SupportsTranscoding = false,
             MediaStreams = new List<MediaStream>
@@ -532,6 +534,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                     Width = r.Width,
                     Height = r.Height,
                     Codec = DetectVideoCodec(r),
+                    BitRate = r.Length > 0 ? (int)((long)r.Size * 1024 * 1024 * 8 / r.Length * 85 / 100) : null,
                     IsDefault = true
                 },
                 new MediaStream
@@ -540,6 +543,9 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                     Type = MediaStreamType.Audio,
                     Codec = DetectAudioCodec(r),
                     Language = r.Language,
+                    SampleRate = 48000,
+                    Channels = 2,
+                    BitRate = r.Length > 0 ? (int)((long)r.Size * 1024 * 1024 * 8 / r.Length * 15 / 100) : null,
                     IsDefault = true
                 }
             }
