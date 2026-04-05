@@ -497,10 +497,11 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             Path = r.RecordingUrl,
             Protocol = MediaProtocol.Http,
             Container = r.MimeType.Contains("webm") ? "webm" : "mp4",
-            Size = (long)r.Size * 1024 * 1024,
+            Size = (long)r.Size * 1024 * 1024,  // CCC API size is in MB
+            RunTimeTicks = (long)r.Length * TimeSpan.TicksPerSecond,
             IsRemote = true,
             ReadAtNativeFramerate = false,
-            SupportsDirectStream = false,
+            SupportsDirectStream = true,
             SupportsDirectPlay = true,
             SupportsTranscoding = true,
             MediaStreams = new List<MediaStream>
