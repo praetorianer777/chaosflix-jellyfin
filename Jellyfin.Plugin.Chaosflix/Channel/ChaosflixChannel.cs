@@ -522,8 +522,8 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             DefaultAudioStreamIndex = 1,
             IsRemote = true,
             ReadAtNativeFramerate = false,
-            SupportsDirectStream = false,
-            SupportsDirectPlay = true,
+            SupportsDirectStream = true,
+            SupportsDirectPlay = false,
             SupportsTranscoding = false,
             MediaStreams = new List<MediaStream>
             {
