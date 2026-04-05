@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -508,7 +510,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         return sorted.Select((r, i) => new MediaSourceInfo
         {
-            Id = $"{r.Folder}_{r.Language}",
+            Id = DeterministicGuid($"{r.RecordingUrl}").ToString("N"),
             Name = FormatRecordingName(r),
             Path = r.RecordingUrl,
             Protocol = MediaProtocol.Http,
@@ -518,7 +520,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             IsRemote = true,
             ReadAtNativeFramerate = false,
             SupportsDirectStream = true,
-            SupportsDirectPlay = false,  // Force streaming through Jellyfin server — ExoPlayer can't follow CDN 302 redirects
+            SupportsDirectPlay = true,
             SupportsTranscoding = true,
             MediaStreams = new List<MediaStream>
             {
@@ -572,4 +574,14 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     [GeneratedRegex(@"^\d{4}c\d$|^\d{4}$")]
     private static partial Regex YearPattern();
+
+    /// <summary>
+    /// Creates a deterministic GUID from a string (MD5-based, namespace v3 style).
+    /// Jellyfin's streaming pipeline requires MediaSourceInfo.Id to be GUID-parseable.
+    /// </summary>
+    private static Guid DeterministicGuid(string input)
+    {
+        var hash = MD5.HashData(Encoding.UTF8.GetBytes(input));
+        return new Guid(hash);
+    }
 }
