@@ -10,11 +10,11 @@
     "versions": [
       {
         "version": "0.0.16.0",
-        "changelog": "Release v0.0.16",
+        "changelog": "fix: absolute URL for stream endpoint (Android playback)",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.16/chaosflix-jellyfin-v0.0.16.zip",
-        "checksum": "84708edb42c33075ec5c43901c3a6c60",
-        "timestamp": "2026-04-05T21:11:37Z"
+        "checksum": "c1efd0c0d544a5e1a5bd490b1fcec86a",
+        "timestamp": "2026-04-05T21:18:06Z"
       }
     ]
   }
