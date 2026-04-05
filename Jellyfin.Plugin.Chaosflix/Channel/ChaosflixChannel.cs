@@ -500,17 +500,27 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             Size = (long)r.Size * 1024 * 1024,
             IsRemote = true,
             ReadAtNativeFramerate = false,
-            SupportsDirectStream = true,
+            SupportsDirectStream = false,
             SupportsDirectPlay = true,
             SupportsTranscoding = true,
             MediaStreams = new List<MediaStream>
             {
                 new MediaStream
                 {
+                    Index = 0,
                     Type = MediaStreamType.Video,
                     Width = r.Width,
                     Height = r.Height,
-                    Codec = r.MimeType.Contains("webm") ? "vp9" : "h264"
+                    Codec = r.MimeType.Contains("webm") ? "vp9" : "h264",
+                    IsDefault = true
+                },
+                new MediaStream
+                {
+                    Index = 1,
+                    Type = MediaStreamType.Audio,
+                    Codec = r.MimeType.Contains("webm") ? "opus" : "aac",
+                    Language = r.Language,
+                    IsDefault = true
                 }
             }
         }).ToList();
