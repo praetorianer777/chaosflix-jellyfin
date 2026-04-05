@@ -513,7 +513,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             Id = DeterministicGuid($"{r.RecordingUrl}").ToString("N"),
             Name = FormatRecordingName(r),
             Path = r.RecordingUrl,
-            Protocol = MediaProtocol.Http,
+            Protocol = MediaProtocol.File,  // FILE triggers ProgressiveMediaSource in Android client (HTTP triggers HLS)
             Container = DetectContainer(r),
             Size = (long)r.Size * 1024 * 1024,  // CCC API size is in MB
             RunTimeTicks = (long)r.Length * TimeSpan.TicksPerSecond,
@@ -523,7 +523,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             IsRemote = true,
             ReadAtNativeFramerate = false,
             SupportsDirectStream = true,
-            SupportsDirectPlay = false,
+            SupportsDirectPlay = true,
             SupportsTranscoding = false,
             MediaStreams = new List<MediaStream>
             {
