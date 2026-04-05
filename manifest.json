@@ -9,12 +9,12 @@
     "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg",
     "versions": [
       {
-        "version": "0.0.12.0",
-        "changelog": "Release v0.0.12",
+        "version": "0.0.13.0",
+        "changelog": "Release v0.0.13",
         "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.12/chaosflix-jellyfin-v0.0.12.zip",
-        "checksum": "e345c7ede34bd11d25897feef558c1d2",
-        "timestamp": "2026-04-05T20:39:44Z"
+        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.13/chaosflix-jellyfin-v0.0.13.zip",
+        "checksum": "c8d158b2f59bdc96dc64b2fa864556e8",
+        "timestamp": "2026-04-05T20:51:42Z"
       }
     ]
   }
