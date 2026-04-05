@@ -485,7 +485,12 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         var preferredMime = config.PreferredFormat == VideoFormat.WebM ? "video/webm" : "video/mp4";
 
         var sorted = videoRecordings
-            .OrderByDescending(r => r.MimeType.Equals(preferredMime, StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+            // Prefer the configured format, but never prefer AV1 (poor device support)
+            .OrderByDescending(r =>
+            {
+                if (IsAv1(r)) return -1; // AV1 last — many devices can't decode it
+                return r.MimeType.StartsWith(preferredMime, StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            })
             .ThenByDescending(r =>
                 (config.PreferredQuality == VideoQuality.High && r.HighQuality) ||
                 (config.PreferredQuality == VideoQuality.Standard && !r.HighQuality) ? 1 : 0)
@@ -507,13 +512,13 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             Name = FormatRecordingName(r),
             Path = r.RecordingUrl,
             Protocol = MediaProtocol.Http,
-            Container = r.MimeType.Contains("webm") ? "webm" : "mp4",
+            Container = DetectContainer(r),
             Size = (long)r.Size * 1024 * 1024,  // CCC API size is in MB
             RunTimeTicks = (long)r.Length * TimeSpan.TicksPerSecond,
             IsRemote = true,
             ReadAtNativeFramerate = false,
             SupportsDirectStream = true,
-            SupportsDirectPlay = true,
+            SupportsDirectPlay = false,  // Force streaming through Jellyfin server — ExoPlayer can't follow CDN 302 redirects
             SupportsTranscoding = true,
             MediaStreams = new List<MediaStream>
             {
@@ -523,14 +528,14 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                     Type = MediaStreamType.Video,
                     Width = r.Width,
                     Height = r.Height,
-                    Codec = r.MimeType.Contains("webm") ? "vp9" : "h264",
+                    Codec = DetectVideoCodec(r),
                     IsDefault = true
                 },
                 new MediaStream
                 {
                     Index = 1,
                     Type = MediaStreamType.Audio,
-                    Codec = r.MimeType.Contains("webm") ? "opus" : "aac",
+                    Codec = DetectAudioCodec(r),
                     Language = r.Language,
                     IsDefault = true
                 }
@@ -538,11 +543,30 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         }).ToList();
     }
 
+    private static bool IsAv1(CccRecording r) =>
+        r.MimeType.Contains("av01", StringComparison.OrdinalIgnoreCase) ||
+        r.Folder.StartsWith("av1", StringComparison.OrdinalIgnoreCase);
+
+    private static string DetectContainer(CccRecording r) =>
+        r.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? "mp4" : "webm";
+
+    private static string DetectVideoCodec(CccRecording r)
+    {
+        if (r.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase))
+            return "h264";
+        if (IsAv1(r))
+            return "av1";
+        return "vp9";
+    }
+
+    private static string DetectAudioCodec(CccRecording r) =>
+        r.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? "aac" : "opus";
+
     private static string FormatRecordingName(CccRecording r)
     {
         var quality = r.HighQuality ? "HD" : "SD";
         var resolution = r.Height > 0 ? $"{r.Width}x{r.Height}" : "?";
-        var format = r.MimeType.Contains("webm") ? "WebM" : "MP4";
+        var format = IsAv1(r) ? "AV1" : DetectContainer(r).ToUpperInvariant();
         return $"{quality} {resolution} ({format}) [{r.Language}]";
     }
 
