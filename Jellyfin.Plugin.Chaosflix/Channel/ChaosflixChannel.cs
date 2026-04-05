@@ -140,18 +140,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         }
 
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-        var sources = SelectRecordings(cccEvent.Recordings, config);
-
-        // Resolve CDN redirects — ExoPlayer on Android can't follow cross-domain 302s
-        foreach (var source in sources)
-        {
-            if (!string.IsNullOrEmpty(source.Path) && source.Path.Contains("cdn.media.ccc.de", StringComparison.OrdinalIgnoreCase))
-            {
-                source.Path = await _apiClient.ResolveRedirectAsync(source.Path, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        return sources;
+        return SelectRecordings(cccEvent.Recordings, config, eventGuid);
     }
 
     /// <inheritdoc />
@@ -473,7 +462,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     // ── Recording selection ──────────────────────────────
 
-    private static List<MediaSourceInfo> SelectRecordings(List<CccRecording> recordings, PluginConfiguration config)
+    private static List<MediaSourceInfo> SelectRecordings(List<CccRecording> recordings, PluginConfiguration config, string eventGuid)
     {
         var videoRecordings = recordings
             .Where(r => r.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
@@ -508,21 +497,23 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             .ThenByDescending(r => r.Width)
             .ToList();
 
+        // Build HLS playlist URL — Jellyfin Android uses HlsMediaSource for HTTP DirectPlay,
+        // so we serve a minimal HLS playlist from our API that wraps the CDN mirror URL.
         return sorted.Select((r, i) => new MediaSourceInfo
         {
             Id = DeterministicGuid($"{r.RecordingUrl}").ToString("N"),
             Name = FormatRecordingName(r),
-            Path = r.RecordingUrl,
-            Protocol = MediaProtocol.File,  // FILE triggers ProgressiveMediaSource in Android client (HTTP triggers HLS)
-            Container = DetectContainer(r),
+            Path = $"/api/ChaosflixStream/stream/{eventGuid}?recordingFolder={Uri.EscapeDataString(r.Folder)}&language={Uri.EscapeDataString(r.Language)}",
+            Protocol = MediaProtocol.Http,
+            Container = "m3u8",
             Size = (long)r.Size * 1024 * 1024,  // CCC API size is in MB
             RunTimeTicks = (long)r.Length * TimeSpan.TicksPerSecond,
             Bitrate = r.Length > 0 ? (int)((long)r.Size * 1024 * 1024 * 8 / r.Length) : null,
             VideoType = VideoType.VideoFile,
             DefaultAudioStreamIndex = 1,
-            IsRemote = true,
+            IsRemote = false,
             ReadAtNativeFramerate = false,
-            SupportsDirectStream = true,
+            SupportsDirectStream = false,
             SupportsDirectPlay = true,
             SupportsTranscoding = false,
             MediaStreams = new List<MediaStream>
