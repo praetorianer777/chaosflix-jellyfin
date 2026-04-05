@@ -520,7 +520,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             IsRemote = true,
             ReadAtNativeFramerate = false,
             SupportsDirectStream = true,
-            SupportsDirectPlay = true,
+            SupportsDirectPlay = false,
             SupportsTranscoding = true,
             MediaStreams = new List<MediaStream>
             {
