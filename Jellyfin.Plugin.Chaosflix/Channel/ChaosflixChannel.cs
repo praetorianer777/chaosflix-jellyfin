@@ -515,10 +515,10 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             + $"?recordingFolder={Uri.EscapeDataString(bestRecording.Folder)}"
             + $"&language={Uri.EscapeDataString(bestRecording.Language)}";
 
-        // Declare all 3 streams with correct indices matching the actual CCC MP4 layout:
-        //   Stream 0: Video (main)
-        //   Stream 1: Video (visual impaired / audio description)
-        //   Stream 2: Audio (AAC)
+        // CCC MP4 files vary: some have 2 streams (video+audio), some have 3
+        // (video+video[visual impaired]+audio). We declare the minimum (video+audio)
+        // and let the server probe the actual file through our proxy to discover
+        // the real stream layout. This ensures correct -map flags for any file.
         var result = new List<MediaSourceInfo>
         {
             new MediaSourceInfo
@@ -532,10 +532,9 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 RunTimeTicks = (long)bestRecording.Length * TimeSpan.TicksPerSecond,
                 Bitrate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length) : null,
                 VideoType = VideoType.VideoFile,
-                DefaultAudioStreamIndex = 2,
                 IsRemote = false,
                 ReadAtNativeFramerate = false,
-                SupportsProbing = false,
+                SupportsProbing = true,
                 SupportsDirectPlay = false,
                 SupportsDirectStream = true,
                 SupportsTranscoding = true,
@@ -554,15 +553,6 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                     new MediaStream
                     {
                         Index = 1,
-                        Type = MediaStreamType.Video,
-                        Width = bestRecording.Width,
-                        Height = bestRecording.Height,
-                        Codec = DetectVideoCodec(bestRecording),
-                        IsDefault = false
-                    },
-                    new MediaStream
-                    {
-                        Index = 2,
                         Type = MediaStreamType.Audio,
                         Codec = DetectAudioCodec(bestRecording),
                         Language = bestRecording.Language,
