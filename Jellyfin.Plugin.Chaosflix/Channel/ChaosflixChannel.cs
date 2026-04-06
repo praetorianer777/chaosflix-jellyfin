@@ -573,18 +573,10 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             };
 
             var info = await _mediaEncoder.GetMediaInfo(request, cancellationToken).ConfigureAwait(false);
-            var allStreams = info.MediaStreams?.ToList() ?? new List<MediaStream>();
+            var streams = info.MediaStreams?.ToList() ?? new List<MediaStream>();
 
-            // Keep only the first video stream and all audio streams.
-            // CCC files with 2 video streams (visual impaired) cause the server
-            // to force HLS remux instead of DirectStream. By hiding the extra
-            // video stream, the server sees a simple file and DirectStreams it.
-            var streams = allStreams
-                .Where(s => s.Type != MediaStreamType.Video || s.IsDefault)
-                .ToList();
-
-            _logger.LogInformation("Probed {Total} streams for {CacheKey}, exposing {Count}: {Types}",
-                allStreams.Count, cacheKey, streams.Count,
+            _logger.LogInformation("Probed {Count} streams for {CacheKey}: {Types}",
+                streams.Count, cacheKey,
                 string.Join(", ", streams.Select(s => $"{s.Type}@{s.Index}")));
 
             _probeCache.TryAdd(cacheKey, streams);
