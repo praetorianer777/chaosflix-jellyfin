@@ -10,11 +10,11 @@
     "versions": [
       {
         "version": "0.0.18.0",
-        "changelog": "Release v0.0.18",
+        "changelog": "fix: DirectStream approach - resolve CDN URL, avoid HLS parsing crash on Android",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.18/chaosflix-jellyfin-v0.0.18.zip",
-        "checksum": "9ec88d3fcaf11c26c6a31ca386071b25",
-        "timestamp": "2026-04-06T08:14:35Z"
+        "checksum": "9212c3ad419661c1add8276109a24eaa",
+        "timestamp": "2026-04-06T08:21:49Z"
       }
     ]
   }
