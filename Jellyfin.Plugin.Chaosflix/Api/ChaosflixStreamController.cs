@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Chaosflix.Configuration;
 using MediaBrowser.Controller.Library;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -19,7 +18,6 @@ namespace Jellyfin.Plugin.Chaosflix.Api;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 public class ChaosflixStreamController : ControllerBase
 {
     private readonly CccApiClient _apiClient;
