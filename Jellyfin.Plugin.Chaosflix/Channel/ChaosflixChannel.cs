@@ -507,10 +507,12 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         var resolvedUrl = await apiClient.ResolveRedirectAsync(bestRecording.RecordingUrl, cancellationToken)
             .ConfigureAwait(false);
 
-        // Use DirectStream: server proxies CDN content → client uses ProgressiveMediaSource
-        // (not HlsMediaSource), with HTTP range requests for seeking support.
-        // We declare only video+audio (hide the visual impaired 2nd video track) and
-        // disable probing so the server doesn't discover the extra stream and force transcoding.
+        // Server always transcodes remote HTTP sources to HLS, overriding our flags.
+        // We must declare all 3 streams with correct indices so ffmpeg maps correctly:
+        //   Stream 0: Video (main) — we want this
+        //   Stream 1: Video (visual impaired) — must be declared so server knows to skip it
+        //   Stream 2: Audio (AAC) — we want this
+        // DefaultAudioStreamIndex=2 ensures ffmpeg generates: -map 0:0 -map 0:2
         var result = new List<MediaSourceInfo>
         {
             new MediaSourceInfo
@@ -524,13 +526,13 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 RunTimeTicks = (long)bestRecording.Length * TimeSpan.TicksPerSecond,
                 Bitrate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length) : null,
                 VideoType = VideoType.VideoFile,
-                DefaultAudioStreamIndex = 1,
+                DefaultAudioStreamIndex = 2,
                 IsRemote = true,
                 ReadAtNativeFramerate = false,
                 SupportsProbing = false,
                 SupportsDirectPlay = false,
                 SupportsDirectStream = true,
-                SupportsTranscoding = false,
+                SupportsTranscoding = true,
                 MediaStreams = new List<MediaStream>
                 {
                     new MediaStream
@@ -546,6 +548,15 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                     new MediaStream
                     {
                         Index = 1,
+                        Type = MediaStreamType.Video,
+                        Width = bestRecording.Width,
+                        Height = bestRecording.Height,
+                        Codec = DetectVideoCodec(bestRecording),
+                        IsDefault = false
+                    },
+                    new MediaStream
+                    {
+                        Index = 2,
                         Type = MediaStreamType.Audio,
                         Codec = DetectAudioCodec(bestRecording),
                         Language = bestRecording.Language,
