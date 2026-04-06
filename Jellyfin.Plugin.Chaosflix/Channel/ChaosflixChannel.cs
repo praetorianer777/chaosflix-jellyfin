@@ -538,30 +538,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 SupportsDirectPlay = false,
                 SupportsDirectStream = true,
                 SupportsTranscoding = true,
-                MediaStreams = new List<MediaStream>
-                {
-                    new MediaStream
-                    {
-                        Index = 0,
-                        Type = MediaStreamType.Video,
-                        Width = bestRecording.Width,
-                        Height = bestRecording.Height,
-                        Codec = DetectVideoCodec(bestRecording),
-                        BitRate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length * 85 / 100) : null,
-                        IsDefault = true
-                    },
-                    new MediaStream
-                    {
-                        Index = 1,
-                        Type = MediaStreamType.Audio,
-                        Codec = DetectAudioCodec(bestRecording),
-                        Language = bestRecording.Language,
-                        SampleRate = 48000,
-                        Channels = 2,
-                        BitRate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length * 15 / 100) : null,
-                        IsDefault = true
-                    }
-                }
+                MediaStreams = new List<MediaStream>()
             }
         };
 
