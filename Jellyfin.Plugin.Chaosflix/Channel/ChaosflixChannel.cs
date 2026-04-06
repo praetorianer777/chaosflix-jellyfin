@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.Chaosflix.Api;
 using Jellyfin.Plugin.Chaosflix.Api.Models;
 using Jellyfin.Plugin.Chaosflix.Configuration;
+using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Channels;
@@ -36,14 +37,16 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixChannel> _logger;
+    private readonly IServerApplicationHost _appHost;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ChaosflixChannel"/> class.
     /// </summary>
-    public ChaosflixChannel(CccApiClient apiClient, ILogger<ChaosflixChannel> logger)
+    public ChaosflixChannel(CccApiClient apiClient, ILogger<ChaosflixChannel> logger, IServerApplicationHost appHost)
     {
         _apiClient = apiClient;
         _logger = logger;
+        _appHost = appHost;
     }
 
     /// <inheritdoc />
@@ -140,7 +143,8 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         }
 
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-        return await SelectRecordingsAsync(cccEvent.Recordings, config, _apiClient, cancellationToken).ConfigureAwait(false);
+        var serverUrl = _appHost.GetSmartApiUrl(string.Empty).TrimEnd('/');
+        return await SelectRecordingsAsync(cccEvent.Recordings, config, eventGuid, serverUrl, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -462,10 +466,11 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     // ── Recording selection ──────────────────────────────
 
-    private static async Task<List<MediaSourceInfo>> SelectRecordingsAsync(
+    private static Task<List<MediaSourceInfo>> SelectRecordingsAsync(
         List<CccRecording> recordings,
         PluginConfiguration config,
-        CccApiClient apiClient,
+        string eventGuid,
+        string serverUrl,
         CancellationToken cancellationToken)
     {
         var videoRecordings = recordings
@@ -474,16 +479,15 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         if (videoRecordings.Count == 0)
         {
-            return new List<MediaSourceInfo>();
+            return Task.FromResult(new List<MediaSourceInfo>());
         }
 
         var preferredMime = config.PreferredFormat == VideoFormat.WebM ? "video/webm" : "video/mp4";
 
         var sorted = videoRecordings
-            // Prefer the configured format, but never prefer AV1 (poor device support)
             .OrderByDescending(r =>
             {
-                if (IsAv1(r)) return -1; // AV1 last — many devices can't decode it
+                if (IsAv1(r)) return -1;
                 return r.MimeType.StartsWith(preferredMime, StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             })
             .ThenByDescending(r =>
@@ -501,25 +505,27 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             .ThenByDescending(r => r.Width)
             .ToList();
 
-        // Resolve CDN redirect for the best recording to get direct mirror URL.
-        // Only resolve top pick to avoid unnecessary HEAD requests.
         var bestRecording = sorted[0];
-        var resolvedUrl = await apiClient.ResolveRedirectAsync(bestRecording.RecordingUrl, cancellationToken)
-            .ConfigureAwait(false);
 
-        // Server always transcodes remote HTTP sources to HLS, overriding our flags.
-        // We must declare all 3 streams with correct indices so ffmpeg maps correctly:
-        //   Stream 0: Video (main) — we want this
-        //   Stream 1: Video (visual impaired) — must be declared so server knows to skip it
-        //   Stream 2: Audio (AAC) — we want this
-        // DefaultAudioStreamIndex=2 ensures ffmpeg generates: -map 0:0 -map 0:2
+        // Point Path to our reverse proxy endpoint. This is critical:
+        // - IsRemote=false: server won't force-transcode "remote" sources
+        // - Proxy supports HTTP Range requests → enables seeking
+        // - Server sees local HTTP source → prefers DirectStream over Transcoding
+        var proxyUrl = $"{serverUrl}/api/ChaosflixStream/proxy/{eventGuid}"
+            + $"?recordingFolder={Uri.EscapeDataString(bestRecording.Folder)}"
+            + $"&language={Uri.EscapeDataString(bestRecording.Language)}";
+
+        // Declare all 3 streams with correct indices matching the actual CCC MP4 layout:
+        //   Stream 0: Video (main)
+        //   Stream 1: Video (visual impaired / audio description)
+        //   Stream 2: Audio (AAC)
         var result = new List<MediaSourceInfo>
         {
             new MediaSourceInfo
             {
                 Id = DeterministicGuid($"{bestRecording.RecordingUrl}").ToString("N"),
                 Name = FormatRecordingName(bestRecording),
-                Path = resolvedUrl,
+                Path = proxyUrl,
                 Protocol = MediaProtocol.Http,
                 Container = DetectContainer(bestRecording),
                 Size = (long)bestRecording.Size * 1024 * 1024,
@@ -527,7 +533,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 Bitrate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length) : null,
                 VideoType = VideoType.VideoFile,
                 DefaultAudioStreamIndex = 2,
-                IsRemote = true,
+                IsRemote = false,
                 ReadAtNativeFramerate = false,
                 SupportsProbing = false,
                 SupportsDirectPlay = false,
@@ -569,7 +575,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             }
         };
 
-        return result;
+        return Task.FromResult(result);
     }
 
     private static bool IsAv1(CccRecording r) =>
