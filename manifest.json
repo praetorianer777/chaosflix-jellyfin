@@ -9,12 +9,12 @@
     "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg",
     "versions": [
       {
-        "version": "0.0.18.0",
-        "changelog": "fix: DirectStream approach - resolve CDN URL, avoid HLS parsing crash on Android",
+        "version": "0.0.19.0",
+        "changelog": "fix: correct stream indices for CCC 3-stream MP4 files (video+video+audio)",
         "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.18/chaosflix-jellyfin-v0.0.18.zip",
-        "checksum": "9212c3ad419661c1add8276109a24eaa",
-        "timestamp": "2026-04-06T08:21:49Z"
+        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.19/chaosflix-jellyfin-v0.0.19.zip",
+        "checksum": "f44d07e8172b489f3770339db2cde793",
+        "timestamp": "2026-04-06T08:28:46Z"
       }
     ]
   }
