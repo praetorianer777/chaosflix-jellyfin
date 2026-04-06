@@ -107,11 +107,35 @@ dotnet publish Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj -c Rel
 ### Rebuilding for a new Jellyfin Version
 
 The plugin must be compiled against the same Jellyfin SDK version as your server.
-When you update Jellyfin (e.g. 10.11.6 → 10.12.0), rebuild the plugin:
+
+#### Automatisch (empfohlen)
+
+```bash
+# Auto-detect latest Jellyfin version from NuGet
+./upgrade-jellyfin.sh
+
+# Or specify a version manually
+./upgrade-jellyfin.sh 10.12.0
+```
+
+Das Script:
+1. Updated NuGet-Pakete im `.csproj`
+2. Updated `targetAbi` in `manifest.json`
+3. Macht einen Test-Build via Docker
+4. Zeigt Fehler + Lösungsvorschläge bei Breaking Changes
+
+Danach:
+```bash
+git add -A && git commit -m "chore: upgrade to Jellyfin 10.12.0"
+./release.sh 0.1.0 "Upgrade to Jellyfin 10.12.0"
+git push origin main --tags
+# Upload ZIP auf GitHub Release
+```
+
+#### Manuell
 
 ```bash
 # 1. Check your Jellyfin server version (Dashboard → General)
-#    Example: 10.12.0
 
 # 2. Update the SDK references in the .csproj
 sed -i 's/Version="10.11.7"/Version="10.12.0"/g' \
@@ -121,15 +145,20 @@ sed -i 's/Version="10.11.7"/Version="10.12.0"/g' \
 sed -i 's/"targetAbi": "10.11.0.0"/"targetAbi": "10.12.0.0"/g' manifest.json
 
 # 4. Build and release
-./release.sh 0.0.2 "Rebuild for Jellyfin 10.12.0"
-git push origin main --tags
-
-# 5. Upload the ZIP to the GitHub Release
-gh release upload v0.0.2 chaosflix-jellyfin-v0.0.2.zip
+./release.sh 0.1.0 "Upgrade to Jellyfin 10.12.0"
 ```
 
-> **Tip:** The SDK version on NuGet must match your server.
-> Check available versions: https://www.nuget.org/packages/Jellyfin.Controller
+#### Was bei Major-Updates brechen kann
+
+| Änderung | Symptom | Fix |
+|----------|---------|-----|
+| Target Framework (net9→net10) | `TargetFramework 'net9.0' is not supported` | `.csproj` + Docker SDK-Image updaten |
+| Namespace-Umbenennung | `The type or namespace 'X' does not exist` | `using`-Statements anpassen |
+| API-Signatur-Änderung | `does not contain a definition for 'X'` | Jellyfin Release Notes lesen, Code anpassen |
+| DI-Registration | Plugin wird nicht geladen | `ChaosflixServiceRegistrator.cs` prüfen |
+
+> **Tip:** Check available SDK versions: https://www.nuget.org/packages/Jellyfin.Controller
+> Check release notes: https://github.com/jellyfin/jellyfin/releases
 
 ### Creating a Release (automated)
 
