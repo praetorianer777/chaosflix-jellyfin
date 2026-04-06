@@ -9,12 +9,12 @@
     "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg",
     "versions": [
       {
-        "version": "0.0.20.0",
-        "changelog": "fix: force DirectStream for seeking \u2014 hide 2nd video stream, disable probing",
+        "version": "0.0.21.0",
+        "changelog": "Release v0.0.21",
         "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.20/chaosflix-jellyfin-v0.0.20.zip",
-        "checksum": "0385810de46396985270a76cbc351c7d",
-        "timestamp": "2026-04-06T08:37:27Z"
+        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.21/chaosflix-jellyfin-v0.0.21.zip",
+        "checksum": "aaf0b29bbad7e5db7fb6bdc9b80e1259",
+        "timestamp": "2026-04-06T17:21:11Z"
       }
     ]
   }
