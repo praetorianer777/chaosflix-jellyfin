@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -12,8 +13,10 @@ using Jellyfin.Plugin.Chaosflix.Api.Models;
 using Jellyfin.Plugin.Chaosflix.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
+using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Channels;
+using MediaBrowser.Model.Dlna;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -38,15 +41,18 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixChannel> _logger;
     private readonly IServerApplicationHost _appHost;
+    private readonly IMediaEncoder _mediaEncoder;
+    private readonly ConcurrentDictionary<string, List<MediaStream>> _probeCache = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ChaosflixChannel"/> class.
     /// </summary>
-    public ChaosflixChannel(CccApiClient apiClient, ILogger<ChaosflixChannel> logger, IServerApplicationHost appHost)
+    public ChaosflixChannel(CccApiClient apiClient, ILogger<ChaosflixChannel> logger, IServerApplicationHost appHost, IMediaEncoder mediaEncoder)
     {
         _apiClient = apiClient;
         _logger = logger;
         _appHost = appHost;
+        _mediaEncoder = mediaEncoder;
     }
 
     /// <inheritdoc />
@@ -466,7 +472,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     // ── Recording selection ──────────────────────────────
 
-    private static Task<List<MediaSourceInfo>> SelectRecordingsAsync(
+    private async Task<List<MediaSourceInfo>> SelectRecordingsAsync(
         List<CccRecording> recordings,
         PluginConfiguration config,
         string eventGuid,
@@ -479,7 +485,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         if (videoRecordings.Count == 0)
         {
-            return Task.FromResult(new List<MediaSourceInfo>());
+            return new List<MediaSourceInfo>();
         }
 
         var preferredMime = config.PreferredFormat == VideoFormat.WebM ? "video/webm" : "video/mp4";
@@ -507,18 +513,17 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         var bestRecording = sorted[0];
 
-        // Point Path to our reverse proxy endpoint. This is critical:
-        // - IsRemote=false: server won't force-transcode "remote" sources
-        // - Proxy supports HTTP Range requests → enables seeking
-        // - Server sees local HTTP source → prefers DirectStream over Transcoding
         var proxyUrl = $"{serverUrl}/api/ChaosflixStream/proxy/{eventGuid}"
             + $"?recordingFolder={Uri.EscapeDataString(bestRecording.Folder)}"
             + $"&language={Uri.EscapeDataString(bestRecording.Language)}";
 
-        // CCC MP4 files vary: some have 2 streams (video+audio), some have 3
-        // (video+video[visual impaired]+audio). We declare the minimum (video+audio)
-        // and let the server probe the actual file through our proxy to discover
-        // the real stream layout. This ensures correct -map flags for any file.
+        // Probe the actual file to discover the real stream layout.
+        // CCC MP4s vary: some have 2 streams (video+audio), some have 3
+        // (video+video[visual impaired]+audio). We must declare the correct
+        // indices so the server generates proper ffmpeg -map flags.
+        var mediaStreams = await ProbeMediaStreamsAsync(proxyUrl, eventGuid, cancellationToken).ConfigureAwait(false);
+        var audioStream = mediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Audio);
+
         var result = new List<MediaSourceInfo>
         {
             new MediaSourceInfo
@@ -532,17 +537,55 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 RunTimeTicks = (long)bestRecording.Length * TimeSpan.TicksPerSecond,
                 Bitrate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length) : null,
                 VideoType = VideoType.VideoFile,
+                DefaultAudioStreamIndex = audioStream?.Index,
                 IsRemote = false,
                 ReadAtNativeFramerate = false,
-                SupportsProbing = true,
+                SupportsProbing = false,
                 SupportsDirectPlay = false,
                 SupportsDirectStream = true,
                 SupportsTranscoding = true,
-                MediaStreams = new List<MediaStream>()
+                MediaStreams = mediaStreams
             }
         };
 
-        return Task.FromResult(result);
+        return result;
+    }
+
+    private async Task<List<MediaStream>> ProbeMediaStreamsAsync(
+        string proxyUrl, string cacheKey, CancellationToken cancellationToken)
+    {
+        if (_probeCache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        try
+        {
+            _logger.LogInformation("Probing media streams for {CacheKey} via {Url}", cacheKey, proxyUrl);
+            var request = new MediaInfoRequest
+            {
+                MediaSource = new MediaSourceInfo
+                {
+                    Path = proxyUrl,
+                    Protocol = MediaProtocol.Http
+                },
+                MediaType = DlnaProfileType.Video
+            };
+
+            var info = await _mediaEncoder.GetMediaInfo(request, cancellationToken).ConfigureAwait(false);
+            var streams = info.MediaStreams?.ToList() ?? new List<MediaStream>();
+            _logger.LogInformation("Probed {Count} streams for {CacheKey}: {Types}",
+                streams.Count, cacheKey,
+                string.Join(", ", streams.Select(s => $"{s.Type}@{s.Index}")));
+
+            _probeCache.TryAdd(cacheKey, streams);
+            return streams;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to probe {CacheKey}, returning empty streams", cacheKey);
+            return new List<MediaStream>();
+        }
     }
 
     private static bool IsAv1(CccRecording r) =>
