@@ -522,7 +522,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 RunTimeTicks = (long)bestRecording.Length * TimeSpan.TicksPerSecond,
                 Bitrate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length) : null,
                 VideoType = VideoType.VideoFile,
-                DefaultAudioStreamIndex = 1,
+                DefaultAudioStreamIndex = 2,
                 IsRemote = true,
                 ReadAtNativeFramerate = false,
                 SupportsDirectPlay = false,
@@ -540,9 +540,20 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                         BitRate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length * 85 / 100) : null,
                         IsDefault = true
                     },
+                    // CCC MP4 files have a second video stream (visual impaired / audio description)
+                    // at index 1. We must declare it so the server knows to skip it.
                     new MediaStream
                     {
                         Index = 1,
+                        Type = MediaStreamType.Video,
+                        Width = bestRecording.Width,
+                        Height = bestRecording.Height,
+                        Codec = DetectVideoCodec(bestRecording),
+                        IsDefault = false
+                    },
+                    new MediaStream
+                    {
+                        Index = 2,
                         Type = MediaStreamType.Audio,
                         Codec = DetectAudioCodec(bestRecording),
                         Language = bestRecording.Language,
