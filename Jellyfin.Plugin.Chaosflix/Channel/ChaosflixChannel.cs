@@ -10,7 +10,6 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.Chaosflix.Api;
 using Jellyfin.Plugin.Chaosflix.Api.Models;
 using Jellyfin.Plugin.Chaosflix.Configuration;
-using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Channels;
@@ -37,16 +36,14 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixChannel> _logger;
-    private readonly IServerApplicationHost _appHost;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ChaosflixChannel"/> class.
     /// </summary>
-    public ChaosflixChannel(CccApiClient apiClient, ILogger<ChaosflixChannel> logger, IServerApplicationHost appHost)
+    public ChaosflixChannel(CccApiClient apiClient, ILogger<ChaosflixChannel> logger)
     {
         _apiClient = apiClient;
         _logger = logger;
-        _appHost = appHost;
     }
 
     /// <inheritdoc />
@@ -143,8 +140,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         }
 
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
-        var serverUrl = _appHost.GetSmartApiUrl(string.Empty).TrimEnd('/');
-        return SelectRecordings(cccEvent.Recordings, config, eventGuid, serverUrl);
+        return await SelectRecordingsAsync(cccEvent.Recordings, config, _apiClient, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -466,7 +462,11 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     // ── Recording selection ──────────────────────────────
 
-    private static List<MediaSourceInfo> SelectRecordings(List<CccRecording> recordings, PluginConfiguration config, string eventGuid, string serverUrl)
+    private static async Task<List<MediaSourceInfo>> SelectRecordingsAsync(
+        List<CccRecording> recordings,
+        PluginConfiguration config,
+        CccApiClient apiClient,
+        CancellationToken cancellationToken)
     {
         var videoRecordings = recordings
             .Where(r => r.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
@@ -501,50 +501,61 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             .ThenByDescending(r => r.Width)
             .ToList();
 
-        // Build HLS playlist URL — Jellyfin Android uses HlsMediaSource for HTTP DirectPlay,
-        // so we serve a minimal HLS playlist from our API that wraps the CDN mirror URL.
-        return sorted.Select((r, i) => new MediaSourceInfo
+        // Resolve CDN redirect for the best recording to get direct mirror URL.
+        // Only resolve top pick to avoid unnecessary HEAD requests.
+        var bestRecording = sorted[0];
+        var resolvedUrl = await apiClient.ResolveRedirectAsync(bestRecording.RecordingUrl, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Use DirectStream: server proxies CDN content → Android client uses
+        // ProgressiveMediaSource (not HlsMediaSource), avoiding the HLS parsing issue.
+        var result = new List<MediaSourceInfo>
         {
-            Id = DeterministicGuid($"{r.RecordingUrl}").ToString("N"),
-            Name = FormatRecordingName(r),
-            Path = $"{serverUrl}/api/ChaosflixStream/stream/{eventGuid}?recordingFolder={Uri.EscapeDataString(r.Folder)}&language={Uri.EscapeDataString(r.Language)}",
-            Protocol = MediaProtocol.Http,
-            Container = DetectContainer(r),
-            Size = (long)r.Size * 1024 * 1024,  // CCC API size is in MB
-            RunTimeTicks = (long)r.Length * TimeSpan.TicksPerSecond,
-            Bitrate = r.Length > 0 ? (int)((long)r.Size * 1024 * 1024 * 8 / r.Length) : null,
-            VideoType = VideoType.VideoFile,
-            DefaultAudioStreamIndex = 1,
-            IsRemote = true,
-            ReadAtNativeFramerate = false,
-            SupportsDirectStream = false,
-            SupportsDirectPlay = true,
-            SupportsTranscoding = false,
-            MediaStreams = new List<MediaStream>
+            new MediaSourceInfo
             {
-                new MediaStream
+                Id = DeterministicGuid($"{bestRecording.RecordingUrl}").ToString("N"),
+                Name = FormatRecordingName(bestRecording),
+                Path = resolvedUrl,
+                Protocol = MediaProtocol.Http,
+                Container = DetectContainer(bestRecording),
+                Size = (long)bestRecording.Size * 1024 * 1024,
+                RunTimeTicks = (long)bestRecording.Length * TimeSpan.TicksPerSecond,
+                Bitrate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length) : null,
+                VideoType = VideoType.VideoFile,
+                DefaultAudioStreamIndex = 1,
+                IsRemote = true,
+                ReadAtNativeFramerate = false,
+                SupportsDirectPlay = false,
+                SupportsDirectStream = true,
+                SupportsTranscoding = true,
+                MediaStreams = new List<MediaStream>
                 {
-                    Index = 0,
-                    Type = MediaStreamType.Video,
-                    Width = r.Width,
-                    Height = r.Height,
-                    Codec = DetectVideoCodec(r),
-                    BitRate = r.Length > 0 ? (int)((long)r.Size * 1024 * 1024 * 8 / r.Length * 85 / 100) : null,
-                    IsDefault = true
-                },
-                new MediaStream
-                {
-                    Index = 1,
-                    Type = MediaStreamType.Audio,
-                    Codec = DetectAudioCodec(r),
-                    Language = r.Language,
-                    SampleRate = 48000,
-                    Channels = 2,
-                    BitRate = r.Length > 0 ? (int)((long)r.Size * 1024 * 1024 * 8 / r.Length * 15 / 100) : null,
-                    IsDefault = true
+                    new MediaStream
+                    {
+                        Index = 0,
+                        Type = MediaStreamType.Video,
+                        Width = bestRecording.Width,
+                        Height = bestRecording.Height,
+                        Codec = DetectVideoCodec(bestRecording),
+                        BitRate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length * 85 / 100) : null,
+                        IsDefault = true
+                    },
+                    new MediaStream
+                    {
+                        Index = 1,
+                        Type = MediaStreamType.Audio,
+                        Codec = DetectAudioCodec(bestRecording),
+                        Language = bestRecording.Language,
+                        SampleRate = 48000,
+                        Channels = 2,
+                        BitRate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length * 15 / 100) : null,
+                        IsDefault = true
+                    }
                 }
             }
-        }).ToList();
+        };
+
+        return result;
     }
 
     private static bool IsAv1(CccRecording r) =>
