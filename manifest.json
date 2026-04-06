@@ -10,11 +10,11 @@
     "versions": [
       {
         "version": "0.0.22.0",
-        "changelog": "Release v0.0.22",
+        "changelog": "feat: reverse proxy with HTTP Range support for seeking",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.22/chaosflix-jellyfin-v0.0.22.zip",
-        "checksum": "5c225be98559b93dccd3fba8408e9a0d",
-        "timestamp": "2026-04-06T17:44:50Z"
+        "checksum": "fb9c9e51c8c86602ecbf4f5b7b149798",
+        "timestamp": "2026-04-06T17:53:30Z"
       }
     ]
   }
