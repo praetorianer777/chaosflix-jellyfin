@@ -5,7 +5,7 @@
   "overview": "CCC Media Channel for Jellyfin",
   "owner": "praetorianer777",
   "category": "Channels",
-  "version": "0.0.27.0",
+  "version": "0.0.29.0",
   "targetAbi": "10.11.7.0",
   "status": "Active",
   "autoUpdate": true,
