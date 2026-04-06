@@ -9,12 +9,12 @@
     "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg",
     "versions": [
       {
-        "version": "0.0.17.0",
-        "changelog": "fix: declare actual container for DirectPlay + remove auth from stream endpoint",
+        "version": "0.0.18.0",
+        "changelog": "Release v0.0.18",
         "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.17/chaosflix-jellyfin-v0.0.17.zip",
-        "checksum": "a4f058fe25e704b9cdb4ac25917437e4",
-        "timestamp": "2026-04-06T08:13:22Z"
+        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.18/chaosflix-jellyfin-v0.0.18.zip",
+        "checksum": "9ec88d3fcaf11c26c6a31ca386071b25",
+        "timestamp": "2026-04-06T08:14:35Z"
       }
     ]
   }
