@@ -543,7 +543,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 SupportsProbing = false,
                 SupportsDirectPlay = false,
                 SupportsDirectStream = true,
-                SupportsTranscoding = true,
+                SupportsTranscoding = false,
                 MediaStreams = mediaStreams
             }
         };
