@@ -5,20 +5,26 @@ import {
 	chaosflixChannelId,
 	gotoAuthenticated,
 	loginUi,
+	playbackInfo,
+	serverId,
 	setPluginConfig,
-	userId,
+	talkNamed,
 } from "../helpers/jellyfin";
 
-// Runs last on purpose: the web client asks for the channel's latest media,
-// which re-parents the talks away from the conference folder (#15) and would
-// leave the other specs with empty folders.
+// Runs last on purpose: browsing in the web client refreshes every channel
+// folder, the path that used to re-parent the talks (#15).
 test.describe("web UI", () => {
-	test.fixme("channel and its talks are visible in the web UI", async ({ page }) => {
+	test("channel and its talks are visible in the web UI", async ({ page }) => {
 		const api = await apiContext();
 		const channelId = await chaosflixChannelId(api);
+		// The list view only renders the items when the server is named too.
+		const server = await serverId(api);
 		await loginUi(page);
 
-		await gotoAuthenticated(page, `/web/#/details?id=${channelId}`);
+		await gotoAuthenticated(
+			page,
+			`/web/#/list?parentId=${channelId}&serverId=${server}`,
+		);
 		await expect(page.getByText("📅 Browse by Year")).toBeVisible();
 
 		const byYear = (await channelItems(api)).find((i) =>
@@ -27,12 +33,15 @@ test.describe("web UI", () => {
 		const years = await channelItems(api, byYear.Id);
 		const conferences = await channelItems(api, years[0].Id);
 
-		await gotoAuthenticated(page, `/web/#/details?id=${conferences[0].Id}`);
+		await gotoAuthenticated(
+			page,
+			`/web/#/list?parentId=${conferences[0].Id}&serverId=${server}`,
+		);
 		await expect(page.getByText("Three stream talk")).toBeVisible();
 		await expect(page.getByText("Two stream talk")).toBeVisible();
 	});
 
-	test.fixme("talk plays in the browser with audio, and seeking works", async ({
+	test("talk plays in the browser with audio, and seeking works", async ({
 		page,
 	}) => {
 		const api = await apiContext();
