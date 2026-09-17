@@ -1,0 +1,33 @@
+services:
+  fake-ccc:
+    image: node:22-alpine
+    command: node /srv/server.js
+    working_dir: /srv
+    environment:
+      MEDIA_DIR: /media
+    volumes:
+      - ./fake-ccc:/srv:ro
+      - ./.artifacts/media:/media:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  jellyfin:
+    image: jellyfin/jellyfin:${JELLYFIN_TAG:-10.11.7}
+    ports:
+      - "${JELLYFIN_PORT:-8097}:8096"
+    environment:
+      JELLYFIN_PublishedServerUrl: http://jellyfin:8096
+    volumes:
+      - ./.artifacts/plugin:/config/plugins/Chaosflix
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+    depends_on:
+      fake-ccc:
+        condition: service_healthy
+
+volumes:
+  jellyfin-config:
+  jellyfin-cache:

@@ -65,8 +65,13 @@ case "$tool" in
     # is judged against the branch the commit will actually land on.
     while IFS= read -r seg; do
       read -ra t <<< "$seg"
+      # Strip env assignments and wrappers (time git push, env -i git commit, ...).
       k=0
-      while [[ "${t[k]:-}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do ((k++)); done
+      while [[ "${t[k]:-}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] \
+        || [[ "${t[k]:-}" =~ ^(time|command|exec|nohup|nice|stdbuf|env|sudo|doas)$ ]]; do
+        [[ "${t[k]:-}" == env ]] && while [[ "${t[k+1]:-}" == -* ]]; do ((k++)); done
+        ((k++))
+      done
       t=("${t[@]:k}")
       (( ${#t[@]} )) || continue
 

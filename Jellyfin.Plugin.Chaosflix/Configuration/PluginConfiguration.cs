@@ -22,6 +22,12 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the preferred video format.
     /// </summary>
     public VideoFormat PreferredFormat { get; set; } = VideoFormat.Mp4;
+
+    /// <summary>
+    /// Gets or sets the CCC API endpoint. Empty means the public API at media.ccc.de;
+    /// set it to use a mirror or, in the e2e tests, a local stand-in.
+    /// </summary>
+    public string ApiBaseUrl { get; set; } = string.Empty;
 }
 
 /// <summary>

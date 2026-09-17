@@ -14,7 +14,8 @@ namespace Jellyfin.Plugin.Chaosflix.Api;
 /// </summary>
 public class CccApiClient : IDisposable
 {
-    private const string BaseUrl = "https://api.media.ccc.de/public";
+    /// <summary>Default public API endpoint; overridable for mirrors and tests.</summary>
+    public const string DefaultBaseUrl = "https://api.media.ccc.de/public";
 
     /// <summary>Conference list changes rarely — cache for 1 hour.</summary>
     private static readonly TimeSpan ConferenceListTtl = TimeSpan.FromHours(1);
@@ -38,7 +39,6 @@ public class CccApiClient : IDisposable
     public CccApiClient(IHttpClientFactory httpClientFactory, ILogger<CccApiClient> logger)
     {
         _httpClient = httpClientFactory.CreateClient(nameof(CccApiClient));
-        _httpClient.BaseAddress = new Uri(BaseUrl);
         _httpClient.DefaultRequestHeaders.Accept.Add(
             new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
         _logger = logger;
@@ -53,7 +53,7 @@ public class CccApiClient : IDisposable
         {
             _logger.LogDebug("Fetching conferences from CCC API");
             var response = await _httpClient
-                .GetFromJsonAsync<CccConferencesResponse>("/public/conferences", ct)
+                .GetFromJsonAsync<CccConferencesResponse>(Url("/conferences"), ct)
                 .ConfigureAwait(false);
             return response?.Conferences ?? new List<CccConference>();
         }, cancellationToken);
@@ -68,7 +68,7 @@ public class CccApiClient : IDisposable
         {
             _logger.LogDebug("Fetching conference {Acronym} from CCC API", acronym);
             return await _httpClient
-                .GetFromJsonAsync<CccConference>($"/public/conferences/{acronym}", ct)
+                .GetFromJsonAsync<CccConference>(Url($"/conferences/{acronym}"), ct)
                 .ConfigureAwait(false);
         }, cancellationToken);
     }
@@ -82,7 +82,7 @@ public class CccApiClient : IDisposable
         {
             _logger.LogDebug("Fetching event {Guid} from CCC API", guid);
             return await _httpClient
-                .GetFromJsonAsync<CccEvent>($"/public/events/{guid}", ct)
+                .GetFromJsonAsync<CccEvent>(Url($"/events/{guid}"), ct)
                 .ConfigureAwait(false);
         }, cancellationToken);
     }
@@ -97,10 +97,17 @@ public class CccApiClient : IDisposable
             _logger.LogDebug("Searching CCC API for {Query}", query);
             var encoded = Uri.EscapeDataString(query);
             var response = await _httpClient
-                .GetFromJsonAsync<CccEventsResponse>($"/public/events/search?q={encoded}", ct)
+                .GetFromJsonAsync<CccEventsResponse>(Url($"/events/search?q={encoded}"), ct)
                 .ConfigureAwait(false);
             return response?.Events ?? new List<CccEvent>();
         }, cancellationToken);
+    }
+
+    private static string Url(string path)
+    {
+        var configured = Plugin.Instance?.Configuration.ApiBaseUrl;
+        var baseUrl = string.IsNullOrWhiteSpace(configured) ? DefaultBaseUrl : configured.TrimEnd('/');
+        return baseUrl + path;
     }
 
     /// <summary>
