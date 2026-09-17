@@ -36,6 +36,11 @@
                                 <option value="eng">English</option>
                             </select>
                         </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="ApiBaseUrl">API Endpoint</label>
+                            <input is="emby-input" type="text" id="ApiBaseUrl" placeholder="https://api.media.ccc.de/public" />
+                            <div class="fieldDescription">Leave empty for media.ccc.de. Set it to use a mirror.</div>
+                        </div>
                     </div>
 
                     <div>
@@ -60,6 +65,7 @@
                     document.querySelector('#PreferredQuality').value = config.PreferredQuality || 'High';
                     document.querySelector('#PreferredFormat').value = config.PreferredFormat || 'Mp4';
                     document.querySelector('#PreferredLanguage').value = config.PreferredLanguage || '';
+                    document.querySelector('#ApiBaseUrl').value = config.ApiBaseUrl || '';
                     Dashboard.hideLoadingMsg();
                 });
             });
@@ -71,6 +77,7 @@
                     config.PreferredQuality = document.querySelector('#PreferredQuality').value;
                     config.PreferredFormat = document.querySelector('#PreferredFormat').value;
                     config.PreferredLanguage = document.querySelector('#PreferredLanguage').value;
+                    config.ApiBaseUrl = document.querySelector('#ApiBaseUrl').value;
                     ApiClient.updatePluginConfiguration(ChaosflixConfig.pluginUniqueId, config).then(function () {
                         Dashboard.processPluginConfigurationUpdateResult();
                     });

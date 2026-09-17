@@ -15,6 +15,8 @@ public sealed class FakeCccApi : HttpMessageHandler, IHttpClientFactory
 
     public List<string> Requests { get; } = new();
 
+    public List<string> RequestUris { get; } = new();
+
     public FakeCccApi Json(string pathAndQuery, object body)
     {
         _routes[pathAndQuery] = () => new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(body) };
@@ -41,6 +43,7 @@ public sealed class FakeCccApi : HttpMessageHandler, IHttpClientFactory
         lock (Requests)
         {
             Requests.Add(key);
+            RequestUris.Add(request.RequestUri.ToString());
         }
 
         return Task.FromResult(_routes.TryGetValue(key, out var route)

@@ -1,0 +1,14 @@
+{
+  "name": "chaosflix-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "End-to-end tests driving Jellyfin with the Chaosflix plugin against a fake media.ccc.de",
+  "scripts": {
+    "test": "playwright test",
+    "stack:up": "./scripts/build-artifacts.sh && docker compose up -d",
+    "stack:down": "docker compose down -v"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}
