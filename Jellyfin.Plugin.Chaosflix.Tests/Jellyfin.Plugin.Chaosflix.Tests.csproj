@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Target framework and Jellyfin version are read from the plugin project so
+    upgrade-jellyfin.sh keeps editing a single file. The Jellyfin packages are
+    referenced again here because the plugin excludes their runtime assets,
+    which the tests need to load.
+  -->
+  <PropertyGroup>
+    <PluginProject>$(MSBuildThisFileDirectory)../Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj</PluginProject>
+    <PluginProjectXml>$([System.IO.File]::ReadAllText('$(PluginProject)'))</PluginProjectXml>
+    <JellyfinVersion>$([System.Text.RegularExpressions.Regex]::Match('$(PluginProjectXml)', 'Include=&quot;Jellyfin.Controller&quot; Version=&quot;([^&quot;]+)&quot;').Groups[1].Value)</JellyfinVersion>
+    <TargetFramework>$([System.Text.RegularExpressions.Regex]::Match('$(PluginProjectXml)', '&lt;TargetFramework&gt;([^&lt;]+)&lt;').Groups[1].Value)</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)" />
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinVersion)" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Jellyfin.Plugin.Chaosflix\Jellyfin.Plugin.Chaosflix.csproj" />
+  </ItemGroup>
+
+</Project>
