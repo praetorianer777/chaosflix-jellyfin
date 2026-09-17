@@ -157,6 +157,53 @@ export async function channelItems(api: APIRequestContext, folderId?: string) {
 	}>;
 }
 
+/** Starts a scheduled task by key and waits until it is idle again. */
+export async function runScheduledTask(
+	api: APIRequestContext,
+	key: string,
+): Promise<void> {
+	const task = async () =>
+		((await (await api.get("/ScheduledTasks")).json()) as Array<{
+			Key: string;
+			Id: string;
+			State: string;
+		}>).find((t) => t.Key === key)!;
+
+	const start = await api.post(`/ScheduledTasks/Running/${(await task()).Id}`);
+	expect(start.ok(), `starting ${key} failed: ${start.status()}`).toBeTruthy();
+
+	await expect
+		.poll(async () => (await task()).State, { timeout: 60_000 })
+		.toBe("Idle");
+}
+
+export async function serverId(api: APIRequestContext): Promise<string> {
+	return (await (await api.get("/System/Info/Public")).json()).Id as string;
+}
+
+export async function talkNamed(api: APIRequestContext, name: string) {
+	const byYear = (await channelItems(api)).find((i) =>
+		i.Name.includes("Browse by Year"),
+	)!;
+	const years = await channelItems(api, byYear.Id);
+	const conferences = await channelItems(api, years[0].Id);
+	const talks = await channelItems(api, conferences[0].Id);
+	return talks.find((t) => t.Name === name)!;
+}
+
+export async function playbackInfo(api: APIRequestContext, itemId: string) {
+	const user = await userId(api);
+	const response = await api.post(
+		`/Items/${itemId}/PlaybackInfo?userId=${user}`,
+		{
+			data: { UserId: user, AutoOpenLiveStream: false },
+		},
+	);
+	expect(response.ok()).toBeTruthy();
+	const body = await response.json();
+	return { ...body.MediaSources[0], PlaySessionId: body.PlaySessionId };
+}
+
 export async function userId(api: APIRequestContext): Promise<string> {
 	const me = await (await api.get("/Users/Me")).json();
 	return me.Id as string;

@@ -1,34 +1,10 @@
-import { APIRequestContext, expect, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
 	apiContext,
-	channelItems,
-	loginUi,
-	setPluginConfig,
+	playbackInfo,
+	talkNamed,
 	userId,
 } from "../helpers/jellyfin";
-
-async function talkNamed(api: APIRequestContext, name: string) {
-	const byYear = (await channelItems(api)).find((i) =>
-		i.Name.includes("Browse by Year"),
-	)!;
-	const years = await channelItems(api, byYear.Id);
-	const conferences = await channelItems(api, years[0].Id);
-	const talks = await channelItems(api, conferences[0].Id);
-	return talks.find((t) => t.Name === name)!;
-}
-
-async function playbackInfo(api: APIRequestContext, itemId: string) {
-	const user = await userId(api);
-	const response = await api.post(
-		`/Items/${itemId}/PlaybackInfo?userId=${user}`,
-		{
-			data: { UserId: user, AutoOpenLiveStream: false },
-		},
-	);
-	expect(response.ok()).toBeTruthy();
-	const body = await response.json();
-	return { ...body.MediaSources[0], PlaySessionId: body.PlaySessionId };
-}
 
 test.describe("playback", () => {
 	test("MP4 with an extra video stream keeps all streams and the right audio index", async () => {

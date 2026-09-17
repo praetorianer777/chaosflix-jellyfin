@@ -102,7 +102,7 @@ public class ChaosflixChannelTests
 
         var result = await Items("conf:38c3");
 
-        Assert.Equal(new[] { "event:e-new", "event:e-old" }, result.Items.Select(i => i.Id));
+        Assert.Equal(new[] { "event:conf-38c3:e-new", "event:conf-38c3:e-old" }, result.Items.Select(i => i.Id));
         Assert.All(result.Items, i => Assert.Equal(ChannelItemType.Media, i.Type));
     }
 
@@ -169,7 +169,9 @@ public class ChaosflixChannelTests
 
         var result = await Items("virtual:popular");
 
-        Assert.Equal(new[] { "event:e6", "event:e5", "event:e4", "event:e3", "event:e2" }, result.Items.Select(i => i.Id));
+        Assert.Equal(
+            new[] { "event:popular:e6", "event:popular:e5", "event:popular:e4", "event:popular:e3", "event:popular:e2" },
+            result.Items.Select(i => i.Id));
         Assert.Equal(0, _api.CountRequests("/public/conferences/c1"));
     }
 
@@ -183,7 +185,7 @@ public class ChaosflixChannelTests
         var result = await Items("virtual:popular");
 
         Assert.Equal(50, result.Items.Count);
-        Assert.Equal("event:e79", result.Items[0].Id);
+        Assert.Equal("event:popular:e79", result.Items[0].Id);
     }
 
     [Fact]
@@ -198,7 +200,7 @@ public class ChaosflixChannelTests
 
         var result = await Items("virtual:recommended");
 
-        Assert.Equal(new[] { "event:fresh", "event:old-popular" }, result.Items.Select(i => i.Id));
+        Assert.Equal(new[] { "event:recommended:fresh", "event:recommended:old-popular" }, result.Items.Select(i => i.Id));
     }
 
     [Fact]
@@ -216,8 +218,8 @@ public class ChaosflixChannelTests
         var result = await Items("related:main");
 
         Assert.Equal(15, result.Items.Count);
-        Assert.Equal("event:r20", result.Items[0].Id);
-        Assert.Equal("event:r6", result.Items[^1].Id);
+        Assert.Equal("event:related-main:r20", result.Items[0].Id);
+        Assert.Equal("event:related-main:r6", result.Items[^1].Id);
         Assert.Equal(0, _api.CountRequests("/public/events/r5"));
     }
 
@@ -246,8 +248,8 @@ public class ChaosflixChannelTests
         var latest = (await _channel.GetLatestMedia(new ChannelLatestMediaSearch(), CancellationToken.None)).ToList();
 
         Assert.Equal(20, latest.Count);
-        Assert.Equal("event:c4-10", latest[0].Id);
-        Assert.DoesNotContain(latest, i => i.Id.StartsWith("event:c2-", StringComparison.Ordinal));
+        Assert.Equal("event:conf-c4:c4-10", latest[0].Id);
+        Assert.DoesNotContain(latest, i => i.Id.StartsWith("event:conf-c2:", StringComparison.Ordinal));
         Assert.Equal(0, _api.CountRequests("/public/conferences/c1"));
     }
 
@@ -417,6 +419,66 @@ public class ChaosflixChannelTests
         await _encoder.Received(1).GetMediaInfo(
             Arg.Is<MediaInfoRequest>(r => r.MediaSource.Path.Contains("recordingFolder=webm-hd", StringComparison.Ordinal)),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task EveryFolderHandsOutItsOwnIdForTheSameTalk()
+    {
+        Conferences(Conference("c", Day(2025)));
+        _api.Json("/public/conferences/c", Conference("c", Day(2025), Event("shared", views: 5_000, releaseDate: DateTimeOffset.UtcNow.AddDays(-1))));
+        _api.Json("/public/events/main", Event("main", related: [new CccRelatedEvent { EventGuid = "shared", Weight = 1 }]));
+        _api.Json("/public/events/shared", Event("shared"));
+
+        var ids = new[]
+        {
+            Assert.Single((await Items("conf:c")).Items).Id,
+            Assert.Single((await Items("virtual:popular")).Items).Id,
+            Assert.Single((await Items("virtual:recommended")).Items).Id,
+            Assert.Single((await Items("related:main")).Items).Id
+        };
+
+        Assert.Equal(
+            new[] { "event:conf-c:shared", "event:popular:shared", "event:recommended:shared", "event:related-main:shared" },
+            ids);
+        Assert.Equal(ids.Length, ids.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task LatestMediaReusesTheConferenceFolderIds()
+    {
+        Conferences(Conference("c", Day(2025)));
+        _api.Json("/public/conferences/c", Conference("c", Day(2025), Event("e1", releaseDate: Day(2025, 1, 2))));
+
+        var latest = await _channel.GetLatestMedia(new ChannelLatestMediaSearch(), CancellationToken.None);
+
+        Assert.Equal(Assert.Single((await Items("conf:c")).Items).Id, Assert.Single(latest).Id);
+    }
+
+    [Theory]
+    [InlineData("event:conf-38c3:e1")]
+    [InlineData("event:popular:e1")]
+    [InlineData("event:recommended:e1")]
+    [InlineData("event:related-other:e1")]
+    [InlineData("event:e1")]
+    [InlineData("e1")]
+    public async Task MediaInfoResolvesTheEventGuidFromAnyFolderId(string itemId)
+    {
+        EventWithRecordings("e1", Recording("h264-hd"));
+
+        var source = Assert.Single(await Sources(itemId));
+
+        Assert.StartsWith("http://jellyfin:8096/api/ChaosflixStream/proxy/e1?", source.Path, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProbeCacheIsSharedBetweenFoldersOfTheSameEvent()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"));
+
+        await Sources("event:conf-c:e1");
+        await Sources("event:popular:e1");
+
+        await _encoder.Received(1).GetMediaInfo(Arg.Any<MediaInfoRequest>(), Arg.Any<CancellationToken>());
     }
 
     private static List<MediaStream> Streams(params MediaStreamType[] types) =>

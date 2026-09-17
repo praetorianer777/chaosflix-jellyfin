@@ -5,6 +5,7 @@ import {
 	chaosflixChannelId,
 	CONFERENCE_TITLE,
 	loginUi,
+	runScheduledTask,
 	userId,
 } from "../helpers/jellyfin";
 
@@ -72,9 +73,7 @@ test.describe("browsing the channel", () => {
 		expect(details.Genres).not.toContain("Stage HUFF");
 	});
 
-	// Browsing Popular or Recommended moves the talks out of the conference
-	// folder (#15), so these stay disabled until that is fixed.
-	test.fixme("popular talks are ordered by view count", async () => {
+	test("popular talks are ordered by view count", async () => {
 		const api = await apiContext();
 
 		const popular = (await channelItems(api)).find((i) =>
@@ -88,7 +87,7 @@ test.describe("browsing the channel", () => {
 		]);
 	});
 
-	test.fixme("recommended ranks talks by views and recency", async () => {
+	test("recommended ranks talks by views and recency", async () => {
 		const api = await apiContext();
 
 		const recommended = (await channelItems(api)).find((i) =>
@@ -101,5 +100,32 @@ test.describe("browsing the channel", () => {
 			"Three stream talk",
 			"Two stream talk",
 		]);
+	});
+
+	// Regression test for #15: every folder used to hand out the same item id,
+	// so listing one folder moved the talks out of all the others.
+	test("talks stay in every folder across a channel refresh", async () => {
+		const api = await apiContext();
+		const folders = await channelItems(api);
+		const byYear = folders.find((i) => i.Name.includes("Browse by Year"))!;
+		const years = await channelItems(api, byYear.Id);
+		const conference = (await channelItems(api, years[0].Id))[0];
+
+		for (const folder of folders) {
+			await channelItems(api, folder.Id);
+		}
+		await runScheduledTask(api, "RefreshInternetChannels");
+
+		for (const folder of [
+			conference,
+			folders.find((i) => i.Name.includes("Popular"))!,
+			folders.find((i) => i.Name.includes("Recommended"))!,
+		]) {
+			const talks = await channelItems(api, folder.Id);
+			expect(
+				talks.map((t) => t.Name).sort(),
+				`${folder.Name} lost its talks`,
+			).toEqual(["Three stream talk", "Two stream talk"]);
+		}
 	});
 });

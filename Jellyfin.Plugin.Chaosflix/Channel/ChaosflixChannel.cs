@@ -37,6 +37,8 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private const string PrefixEvent = "event:";
     private const string PrefixYear = "year:";
     private const string PrefixRelated = "related:";
+    private const string ScopePopular = "popular";
+    private const string ScopeRecommended = "recommended";
 
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixChannel> _logger;
@@ -62,7 +64,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     public string Description => "Chaos Computer Club talks from media.ccc.de";
 
     /// <inheritdoc />
-    public string DataVersion => "6";
+    public string DataVersion => "7";
 
     /// <inheritdoc />
     public string HomePageUrl => "https://media.ccc.de";
@@ -140,7 +142,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     {
         _logger.LogDebug("GetChannelItemMediaInfo: {Id}", id);
 
-        var eventGuid = id.StartsWith(PrefixEvent, StringComparison.Ordinal) ? id[6..] : id;
+        var eventGuid = ExtractEventGuid(id);
         var cccEvent = await _apiClient.GetEventAsync(eventGuid, cancellationToken).ConfigureAwait(false);
 
         if (cccEvent?.Recordings == null)
@@ -165,20 +167,22 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             .Take(3)
             .ToList();
 
-        var allEvents = new List<CccEvent>();
+        var allEvents = new List<(CccEvent Event, string Acronym)>();
         foreach (var conf in recentConferences)
         {
             var detail = await _apiClient.GetConferenceAsync(conf.Acronym, cancellationToken).ConfigureAwait(false);
             if (detail?.Events != null)
             {
-                allEvents.AddRange(detail.Events);
+                allEvents.AddRange(detail.Events.Select(e => (e, conf.Acronym)));
             }
         }
 
+        // The latest row points at the items the conference folders own, so it
+        // does not create a second copy of the same talk.
         return allEvents
-            .OrderByDescending(e => e.ReleaseDate ?? e.Date)
+            .OrderByDescending(x => x.Event.ReleaseDate ?? x.Event.Date)
             .Take(20)
-            .Select(MapEventToChannelItem);
+            .Select(x => MapEventToChannelItem(x.Event, ConferenceScope(x.Acronym)));
     }
 
     // ── Root ──────────────────────────────────────────────
@@ -246,7 +250,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         var items = allEvents
             .OrderByDescending(e => e.ViewCount)
             .Take(50)
-            .Select(MapEventToChannelItem)
+            .Select(e => MapEventToChannelItem(e, ScopePopular))
             .ToList();
 
         return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
@@ -284,7 +288,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 return e.ViewCount / Math.Sqrt(ageDays);
             })
             .Take(30)
-            .Select(MapEventToChannelItem)
+            .Select(e => MapEventToChannelItem(e, ScopeRecommended))
             .ToList();
 
         return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
@@ -352,7 +356,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         var items = conference.Events
             .OrderByDescending(e => e.Date)
-            .Select(MapEventToChannelItem)
+            .Select(e => MapEventToChannelItem(e, ConferenceScope(acronym)))
             .ToList();
 
         return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
@@ -381,21 +385,42 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             var related = await _apiClient.GetEventAsync(guid, cancellationToken).ConfigureAwait(false);
             if (related != null)
             {
-                items.Add(MapEventToChannelItem(related));
+                items.Add(MapEventToChannelItem(related, RelatedScope(eventGuid)));
             }
         }
 
         return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
     }
 
+    // ── Item ids ─────────────────────────────────────────
+
+    // Jellyfin stores a channel item as one library item with exactly one
+    // parent, so a talk listed in several folders under the same id is moved to
+    // whichever folder was listed last and vanishes from the others (#15).
+    // Every folder therefore hands out its own id for a talk.
+    private static string ConferenceScope(string acronym) => $"conf-{acronym}";
+
+    private static string RelatedScope(string eventGuid) => $"related-{eventGuid}";
+
+    /// <summary>
+    /// Reads the CCC event guid back out of a channel item id. Accepts the
+    /// scoped form <c>event:&lt;scope&gt;:&lt;guid&gt;</c>, the unscoped
+    /// <c>event:&lt;guid&gt;</c> and a bare guid.
+    /// </summary>
+    private static string ExtractEventGuid(string id)
+    {
+        var separator = id.LastIndexOf(':');
+        return separator < 0 ? id : id[(separator + 1)..];
+    }
+
     // ── Mapping ──────────────────────────────────────────
 
-    private static ChannelItemInfo MapEventToChannelItem(CccEvent e)
+    private static ChannelItemInfo MapEventToChannelItem(CccEvent e, string scope)
     {
         var info = new ChannelItemInfo
         {
             Name = e.Title,
-            Id = $"{PrefixEvent}{e.Guid}",
+            Id = $"{PrefixEvent}{scope}:{e.Guid}",
             Type = ChannelItemType.Media,
             MediaType = ChannelMediaType.Video,
             ContentType = ChannelMediaContentType.Clip,
