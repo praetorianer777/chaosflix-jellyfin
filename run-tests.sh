@@ -31,7 +31,9 @@ dotnet_run() {
 echo "🔨 Building plugin (net${TFM})..."
 dotnet_run build "$PLUGIN" -c Release
 
-mapfile -t TEST_PROJECTS < <(find . -name '*.Tests.csproj' -not -path './e2e/*' | sort)
+# .claude/worktrees holds full checkouts of other branches; testing those here
+# would run someone else's code and report it as this branch's result.
+mapfile -t TEST_PROJECTS < <(find . -name '*.Tests.csproj' -not -path './e2e/*' -not -path './.claude/*' | sort)
 if (( ${#TEST_PROJECTS[@]} == 0 )); then
     echo "⚠️  No .NET test projects found (see #11)"
 fi
