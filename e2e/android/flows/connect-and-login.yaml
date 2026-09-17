@@ -1,0 +1,42 @@
+appId: org.jellyfin.mobile
+name: Add the test server and sign in
+---
+- assertVisible: "Connect to Server"
+- tapOn: "Host"
+- inputText: ${SERVER_URL}
+- hideKeyboard
+- tapOn: "Connect"
+
+# From here on the app renders jellyfin-web inside a WebView. Its DOM ids show
+# up as resource ids in the accessibility tree, which is far more stable than
+# matching the translated labels around the fields.
+- extendedWaitUntil:
+    visible: "Please sign in"
+    timeout: 120000
+- runFlow:
+    file: dismiss-snackbar.yaml
+
+# The login page keeps re-rendering while the web client finishes connecting,
+# which can wipe the fields between typing and submitting; hence the retry.
+- retry:
+    maxRetries: 3
+    commands:
+      - waitForAnimationToEnd:
+          timeout: 10000
+      - tapOn:
+          id: "txtManualName"
+      - eraseText
+      - inputText: ${USERNAME}
+      - hideKeyboard
+      - tapOn:
+          id: "txtManualPassword"
+      - eraseText
+      - inputText: ${PASSWORD}
+      - hideKeyboard
+      - assertVisible:
+          id: "txtManualName"
+          text: ${USERNAME}
+      - tapOn: "Sign In"
+      - extendedWaitUntil:
+          notVisible: "Please sign in"
+          timeout: 45000

@@ -47,4 +47,13 @@ else
     echo "⚠️  No e2e/ Playwright suite found (see #11)"
 fi
 
+# The Android suite boots an emulator, which takes minutes. This script gates
+# every push, so it only runs when explicitly asked for (see e2e/android/README.md).
+if [[ -n "${ANDROID_E2E:-}" && -x e2e/android/run.sh ]]; then
+    echo "🤖 Android e2e tests"
+    e2e/android/run.sh
+else
+    echo "⏭️  Android e2e tests skipped (set ANDROID_E2E=1 to include them)"
+fi
+
 echo "✅ All tests passed"

@@ -1,0 +1,37 @@
+appId: org.jellyfin.mobile
+name: Let the native player run and seek forward
+---
+# The native ExoPlayer fragment, not the WebView: this is what the Playwright
+# suite can never reach.
+- assertVisible:
+    id: "org.jellyfin.mobile:id/player_view"
+- extendedWaitUntil:
+    visible:
+      id: "org.jellyfin.mobile:id/exo_content_frame"
+    timeout: 60000
+
+# Let it play for a while before seeking, so the server sees ordinary progress
+# first and the jump afterwards is unambiguous.
+- waitForAnimationToEnd:
+    timeout: 20000
+
+- tapOn:
+    id: "org.jellyfin.mobile:id/player_view"
+- extendedWaitUntil:
+    visible:
+      id: "org.jellyfin.mobile:id/exo_progress"
+    timeout: 20000
+- swipe:
+    from:
+      id: "org.jellyfin.mobile:id/exo_progress"
+    direction: RIGHT
+- waitForAnimationToEnd:
+    timeout: 20000
+
+# Dragging the bar to its right edge seeks close to the end, so the player may
+# have finished and handed back to the detail page by now. Both screens carry
+# the talk's title; whether the seek actually reached the server is checked by
+# verify-session.mjs, not here.
+- extendedWaitUntil:
+    visible: ${TALK}
+    timeout: 60000

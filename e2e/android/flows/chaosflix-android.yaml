@@ -1,0 +1,19 @@
+appId: org.jellyfin.mobile
+name: Chaosflix on the Jellyfin Android app
+tags:
+  - chaosflix
+---
+# One flow, not several: Maestro force-stops the app between flows, and a fresh
+# WebView does not expose its accessibility tree until something interacts with
+# it, so a second flow would never find the web client's elements again.
+- launchApp:
+    clearState: true
+    permissions:
+      all: allow
+
+- runFlow:
+    file: connect-and-login.yaml
+- runFlow:
+    file: browse-to-talk.yaml
+- runFlow:
+    file: player-play-and-seek.yaml

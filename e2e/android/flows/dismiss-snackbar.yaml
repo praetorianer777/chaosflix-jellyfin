@@ -1,0 +1,14 @@
+appId: org.jellyfin.mobile
+name: Swipe away the battery optimisation snackbar if it is showing
+---
+# Tapping its "OK" action would open the system battery settings, so the
+# snackbar is swiped off screen instead.
+- runFlow:
+    when:
+      visible:
+        id: "org.jellyfin.mobile:id/snackbar_text"
+    commands:
+      - swipe:
+          from:
+            id: "org.jellyfin.mobile:id/snackbar_text"
+          direction: RIGHT
