@@ -2,6 +2,11 @@
 // Recording URLs point at /cdn/... which 302-redirects to /mirror/..., mirroring
 // how the real CDN hands clients off to a mirror.
 
+// Must match the fixture videos built by scripts/build-artifacts.sh; the Android
+// suite raises it because driving a real player through the UI needs more than
+// five seconds of material.
+const SECONDS = Number(process.env.FIXTURE_SECONDS || 5);
+
 const CONFERENCE = {
 	acronym: "e2e-congress",
 	title: "E2E Congress 2025",
@@ -20,7 +25,7 @@ function recording(
 ) {
 	return {
 		size: 1,
-		length: 5,
+		length: SECONDS,
 		mime_type: mimeType,
 		language,
 		filename: file,
@@ -49,7 +54,7 @@ const EVENTS = [
 		view_count: 4200,
 		date: "2025-12-27T11:00:00Z",
 		release_date: "2025-12-28T11:00:00Z",
-		duration: 5,
+		duration: SECONDS,
 		thumb_url: "http://fake-ccc:3000/static/thumb.png",
 		poster_url: "http://fake-ccc:3000/static/poster.png",
 		frontend_link: "http://fake-ccc:3000/v/three-stream-talk",
@@ -75,7 +80,7 @@ const EVENTS = [
 		view_count: 150,
 		date: "2025-12-28T15:00:00Z",
 		release_date: "2025-12-29T15:00:00Z",
-		duration: 5,
+		duration: SECONDS,
 		thumb_url: "http://fake-ccc:3000/static/thumb.png",
 		conference_title: CONFERENCE.title,
 		recordings: [

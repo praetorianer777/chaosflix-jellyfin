@@ -1,0 +1,30 @@
+appId: org.jellyfin.mobile
+name: Find the Chaosflix channel, browse a conference and start a talk
+---
+- extendedWaitUntil:
+    visible: "Chaosflix"
+    timeout: 120000
+- tapOn: "Chaosflix"
+
+# The folder labels start with an emoji, hence the regex.
+- extendedWaitUntil:
+    visible: ".*Browse by Year.*"
+    timeout: 60000
+- tapOn: ".*Browse by Year.*"
+- extendedWaitUntil:
+    visible: "2025"
+    timeout: 60000
+- tapOn: "2025"
+- extendedWaitUntil:
+    visible: ${CONFERENCE}
+    timeout: 60000
+- tapOn: ${CONFERENCE}
+- extendedWaitUntil:
+    visible: ${TALK}
+    timeout: 60000
+- tapOn: ${TALK}
+
+- extendedWaitUntil:
+    visible: "Play"
+    timeout: 60000
+- tapOn: "Play"
