@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
 	apiContext,
+	chaosflixChannelId,
 	FAKE_API,
 	getPluginConfig,
 	gotoAuthenticated,
@@ -26,11 +27,20 @@ test.describe("plugin installation", () => {
 	});
 
 	test("web client lists the Chaosflix channel", async ({ page }) => {
+		const api = await apiContext();
+		const channelId = await chaosflixChannelId(api);
+
 		await loginUi(page);
 
-		// The channel shows up in the client's navigation once the plugin is loaded.
+		// The channel shows up in the client's navigation once the plugin is
+		// loaded. Matched by accessible name and by the id the link points at, so
+		// the assertion does not depend on where a given jellyfin-web version puts
+		// the entry or what it wraps it in.
 		await expect(
-			page.getByRole("link", { name: "Chaosflix" }).first(),
+			page
+				.getByRole("link", { name: "Chaosflix" })
+				.and(page.locator(`[href*="${channelId}"]`))
+				.first(),
 		).toBeVisible({ timeout: 30_000 });
 	});
 

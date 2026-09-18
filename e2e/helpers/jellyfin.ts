@@ -375,9 +375,27 @@ export async function gotoList(
 }
 
 /**
+ * Whether the web client is sitting on its login route. The route is the signal
+ * rather than the markup: jellyfin-web 12.1 leaves the previous view in the DOM
+ * after a hash navigation, so `#loginPage` matches twice and a locator on it
+ * throws instead of answering (#75). The route spells the same on both versions
+ * (10.11 `#/login.html`, 12.1 `#/login`).
+ */
+async function onLoginRoute(page: Page): Promise<boolean> {
+	if (/#\/login/i.test(page.url())) {
+		return true;
+	}
+	return page
+		.locator("#txtManualName")
+		.first()
+		.isVisible()
+		.catch(() => false);
+}
+
+/**
  * Navigates inside the web client. Right after signing in the client can bounce
  * back to the login route while it is still connecting, so the navigation is
- * retried until the login form is gone.
+ * retried until the login form is gone and stays gone.
  */
 export async function gotoAuthenticated(
 	page: Page,
@@ -385,12 +403,15 @@ export async function gotoAuthenticated(
 ): Promise<void> {
 	for (let attempt = 0; attempt < 5; attempt++) {
 		await page.goto(route);
-		await page.waitForTimeout(1500);
-		const onLoginPage = await page
-			.locator("#loginPage")
-			.isVisible()
-			.catch(() => false);
-		if (!onLoginPage) {
+
+		// Being off the login route once is not enough: the bounce happens after
+		// the hash navigation has already taken effect.
+		let settled = 0;
+		for (let sample = 0; sample < 12 && settled < 3; sample++) {
+			await page.waitForTimeout(500);
+			settled = (await onLoginRoute(page)) ? 0 : settled + 1;
+		}
+		if (settled >= 3) {
 			return;
 		}
 	}
