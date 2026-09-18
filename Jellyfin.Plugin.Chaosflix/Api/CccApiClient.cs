@@ -24,11 +24,15 @@ public class CccApiClient : IDisposable
     /// </summary>
     public const string RedirectClientName = "Chaosflix.CdnRedirect";
 
-    /// <summary>Conference list changes rarely — cache for 1 hour.</summary>
-    private static readonly TimeSpan ConferenceListTtl = TimeSpan.FromHours(1);
+    private const string ConferencesCacheKey = "conferences";
 
-    /// <summary>Conference detail (event list) — cache for 30 minutes.</summary>
-    private static readonly TimeSpan ConferenceDetailTtl = TimeSpan.FromMinutes(30);
+    /// <summary>
+    /// How long the conference list and conference details stay cached.
+    /// <see cref="Channel.ChaosflixSyncTask"/> rewrites both on every run, so this only has to
+    /// outlive <see cref="Channel.ChaosflixSyncTask.SyncInterval"/>; the extra hour of margin keeps
+    /// the pre-warmed data usable when a run is late, skipped or still in progress.
+    /// </summary>
+    public static readonly TimeSpan ConferenceCacheTtl = TimeSpan.FromHours(7);
 
     /// <summary>Event detail with recordings — cache for 15 minutes.</summary>
     private static readonly TimeSpan EventTtl = TimeSpan.FromMinutes(15);
@@ -58,7 +62,7 @@ public class CccApiClient : IDisposable
     /// </summary>
     public Task<List<CccConference>> GetConferencesAsync(CancellationToken cancellationToken)
     {
-        return _cache.GetOrCreateAsync("conferences", ConferenceListTtl, async ct =>
+        return _cache.GetOrCreateAsync(ConferencesCacheKey, ConferenceCacheTtl, async ct =>
         {
             _logger.LogDebug("Fetching conferences from CCC API");
             var response = await _httpClient
@@ -73,13 +77,33 @@ public class CccApiClient : IDisposable
     /// </summary>
     public Task<CccConference?> GetConferenceAsync(string acronym, CancellationToken cancellationToken)
     {
-        return _cache.GetOrCreateAsync($"conf:{acronym}", ConferenceDetailTtl, async ct =>
+        return _cache.GetOrCreateAsync(ConferenceCacheKey(acronym), ConferenceCacheTtl, async ct =>
         {
             _logger.LogDebug("Fetching conference {Acronym} from CCC API", acronym);
             return await _httpClient
                 .GetFromJsonAsync<CccConference>(Url($"/conferences/{acronym}"), ct)
                 .ConfigureAwait(false);
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Refetches the conference list and replaces the cached copy, leaving every other
+    /// cache entry (events, CDN redirects) untouched.
+    /// </summary>
+    public Task<List<CccConference>> RefreshConferencesAsync(CancellationToken cancellationToken)
+    {
+        _cache.Remove(ConferencesCacheKey);
+        return GetConferencesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Refetches a single conference and replaces the cached copy, leaving every other
+    /// cache entry untouched.
+    /// </summary>
+    public Task<CccConference?> RefreshConferenceAsync(string acronym, CancellationToken cancellationToken)
+    {
+        _cache.Remove(ConferenceCacheKey(acronym));
+        return GetConferenceAsync(acronym, cancellationToken);
     }
 
     /// <summary>
@@ -172,6 +196,8 @@ public class CccApiClient : IDisposable
     /// asks the CDN again. Used when the cached mirror stopped serving the recording.
     /// </summary>
     public void InvalidateRedirect(string url) => _cache.Remove(RedirectCacheKey(url));
+
+    private static string ConferenceCacheKey(string acronym) => $"conf:{acronym}";
 
     private static string RedirectCacheKey(string url) => $"redirect:{url}";
 

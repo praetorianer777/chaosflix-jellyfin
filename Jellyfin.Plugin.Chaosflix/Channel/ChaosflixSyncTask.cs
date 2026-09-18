@@ -10,11 +10,18 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.Chaosflix.Channel;
 
 /// <summary>
-/// Scheduled task that pre-warms the CCC API cache by fetching
-/// all conferences and their events in the background.
+/// Scheduled task that pre-warms the CCC API cache by refreshing the conference list and
+/// the most recent conferences in the background. Entries are replaced one at a time, so
+/// cached event details and resolved CDN redirects survive a run.
 /// </summary>
 public class ChaosflixSyncTask : IScheduledTask
 {
+    /// <summary>
+    /// Interval between runs. <see cref="CccApiClient.ConferenceCacheTtl"/> outlives it, so the
+    /// data this task caches is still there when the next run becomes due.
+    /// </summary>
+    public static readonly TimeSpan SyncInterval = TimeSpan.FromHours(6);
+
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixSyncTask> _logger;
 
@@ -42,13 +49,12 @@ public class ChaosflixSyncTask : IScheduledTask
     /// <inheritdoc />
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
     {
-        // Run every 6 hours
         return new[]
         {
             new TaskTriggerInfo
             {
                 Type = TaskTriggerInfoType.IntervalTrigger,
-                IntervalTicks = TimeSpan.FromHours(6).Ticks
+                IntervalTicks = SyncInterval.Ticks
             }
         };
     }
@@ -59,11 +65,7 @@ public class ChaosflixSyncTask : IScheduledTask
         _logger.LogInformation("Chaosflix sync: starting cache refresh");
         progress.Report(0);
 
-        // Clear existing cache to force fresh data
-        _apiClient.ClearCache();
-
-        // Fetch conference list
-        var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
+        var conferences = await _apiClient.RefreshConferencesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Chaosflix sync: found {Count} conferences", conferences.Count);
         progress.Report(10);
 
@@ -74,6 +76,7 @@ public class ChaosflixSyncTask : IScheduledTask
             .Take(20)
             .ToList();
 
+        var refreshed = 0;
         for (var i = 0; i < recentConferences.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -81,11 +84,12 @@ public class ChaosflixSyncTask : IScheduledTask
             var conf = recentConferences[i];
             try
             {
-                var detail = await _apiClient.GetConferenceAsync(conf.Acronym, cancellationToken).ConfigureAwait(false);
+                var detail = await _apiClient.RefreshConferenceAsync(conf.Acronym, cancellationToken).ConfigureAwait(false);
+                refreshed++;
                 _logger.LogDebug("Chaosflix sync: cached {Title} ({EventCount} events)",
                     conf.Title, detail?.Events?.Count ?? 0);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogWarning(ex, "Chaosflix sync: failed to fetch {Acronym}", conf.Acronym);
             }
@@ -93,7 +97,8 @@ public class ChaosflixSyncTask : IScheduledTask
             progress.Report(10 + (90.0 * (i + 1) / recentConferences.Count));
         }
 
-        _logger.LogInformation("Chaosflix sync: completed — {Count} conferences cached", recentConferences.Count);
+        _logger.LogInformation("Chaosflix sync: completed — {Count} of {Total} conferences cached",
+            refreshed, recentConferences.Count);
         progress.Report(100);
     }
 }
