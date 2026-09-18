@@ -9,9 +9,26 @@ HINT="Work only on issue branches named <type>/<issue>-<slug> (e.g. fix/42-audio
 
 input="$(cat)"
 tool="$(jq -r '.tool_name // empty' <<< "$input")"
-repo="$(realpath -m "${CLAUDE_PROJECT_DIR:-$(jq -r '.cwd // empty' <<< "$input")}")"
+project="$(realpath -m "${CLAUDE_PROJECT_DIR:-$(jq -r '.cwd // empty' <<< "$input")}")"
 cwd="$(jq -r '.cwd // empty' <<< "$input")"
-cwd="${cwd:-$repo}"
+cwd="${cwd:-$project}"
+
+# Worktrees are separate checkouts of this repo with their own branch and their
+# own copy of run-tests.sh, so the checkout is resolved from what is being acted
+# on, not from the project directory. They share a common git dir, which is what
+# tells a worktree of this repo apart from an unrelated repo on disk.
+# rev-parse prints the common dir relative to its own working directory, so it
+# is resolved there rather than wherever this hook happens to run.
+git_common_dir() { (cd "$1" 2>/dev/null && realpath -m "$(git rev-parse --git-common-dir 2>/dev/null)"); }
+project_git_dir="$(git_common_dir "$project")"
+
+checkout_for() {
+  local dir="$1" top common
+  top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  common="$(git_common_dir "$dir")"
+  [[ "$common" == "$project_git_dir" ]] || return 1
+  printf '%s' "$top"
+}
 
 decide() {
   jq -n --arg d "$1" --arg r "$2" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: $d, permissionDecisionReason: $r}}'
@@ -20,14 +37,17 @@ decide() {
 deny() { decide deny "$1"; }
 ask() { decide ask "$1"; }
 
-branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached HEAD)')"
 valid() { [[ "$1" =~ $BRANCH_RE ]]; }
 is_branch() { git -C "$repo" show-ref --verify --quiet "refs/heads/$1"; }
 
+# Each checkout gets its own stack, so gates running in parallel worktrees do
+# not fight over the same port and compose project.
 run_tests() {
-  local log
+  local log slot
   log="$(mktemp)"
-  if ! "$repo/run-tests.sh" > "$log" 2>&1; then
+  slot=$(( $(cksum <<< "$repo" | cut -d' ' -f1) % 200 ))
+  if ! (cd "$repo" && COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-chaosflix-gate-$slot}" \
+        JELLYFIN_PORT="${JELLYFIN_PORT:-$((8200 + slot))}" ./run-tests.sh) > "$log" 2>&1; then
     local tail_out
     tail_out="$(tail -n 60 "$log")"
     rm -f "$log"
@@ -42,14 +62,17 @@ case "$tool" in
     path="$(jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' <<< "$input")"
     [[ -n "$path" ]] || exit 0
     path="$(realpath -m "$path")"
-    # Files outside the repo (scratchpad, memory) are not project work.
-    [[ "$path" == "$repo"/* ]] || exit 0
+    # Files outside this repo (scratchpad, memory) are not project work.
+    repo="$(checkout_for "$(dirname "$path")")" || exit 0
+    branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached HEAD)')"
     valid "$branch" || deny "Refusing to edit $path on branch '$branch'. $HINT"
     ;;
 
   Bash)
     cmd="$(jq -r '.tool_input.command // empty' <<< "$input")"
     [[ -n "$cmd" ]] || exit 0
+    repo="$(checkout_for "$cwd")" || exit 0
+    branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached HEAD)')"
 
     # Heredoc bodies and quoted strings are data (commit messages, issue
     # bodies), not commands; blank them before splitting into segments.
@@ -88,7 +111,12 @@ case "$tool" in
         [[ "${t[i]}" == -C || "${t[i]}" == -c ]] && ((i++))
         ((i++))
       done
-      [[ "$target" == "$repo" || "$target" == "$repo"/* ]] || continue
+      # -C into another checkout is judged by that checkout's branch.
+      if [[ "$target" != "$repo" && "$target" != "$repo"/* ]]; then
+        target_repo="$(checkout_for "$target")" || continue
+        repo="$target_repo"
+        branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached HEAD)')"
+      fi
       sub="${t[i]:-}"
       args=("${t[@]:i+1}")
 
