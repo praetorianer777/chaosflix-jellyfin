@@ -3,6 +3,9 @@ name: Release
 # release.sh commits a manifest.json whose sourceUrl points at the release
 # asset, so the asset has to exist the moment the tag is pushed — otherwise
 # every server that has the repository added downloads a 404 (see #19).
+# This job owns the artifact: release.sh no longer builds one, because a ZIP
+# built on the tagging machine is never byte-identical to the published one and
+# its checksum described bytes nobody could download (#49).
 on:
   push:
     tags: ["v*"]
@@ -64,7 +67,7 @@ jobs:
             echo "### ${GITHUB_REF_NAME}"
             echo
             echo "- asset: \`${zip_name}\`"
-            echo "- md5: \`${md5}\` — must match \`checksum\` in manifest.json"
+            echo "- md5: \`${md5}\` — recorded as \`checksum\` in manifest.json"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # release.sh writes release-notes-v<version>.md but .gitignore keeps it
@@ -89,3 +92,50 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" "${{ steps.zip.outputs.name }}" \
             --title "${GITHUB_REF_NAME}" \
             --notes-file notes.md
+
+      # The checksum is taken from the asset as it was downloaded back from the
+      # release, and it lands on the default branch rather than on the tag: a
+      # tag is immutable, and what servers read is manifest.json on that branch.
+      - name: Record the checksum in manifest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: ${{ steps.zip.outputs.name }}
+          TAG: ${{ github.ref_name }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch origin "${BRANCH}"
+          git checkout "${BRANCH}"
+
+          gh release download "${TAG}" --pattern "${ASSET}" --dir published --clobber
+          MD5=$(md5sum "published/${ASSET}" | cut -d' ' -f1) && export MD5
+          rm -rf published
+
+          python3 - <<'PYTHON'
+          import json, os, sys
+
+          with open("manifest.json") as f:
+              data = json.load(f)
+
+          wanted = os.environ["TAG"].lstrip("v")
+          for entry in data[0]["versions"]:
+              if entry["version"] == wanted or entry["version"].startswith(wanted + "."):
+                  entry["checksum"] = os.environ["MD5"]
+                  break
+          else:
+              sys.exit(f"manifest.json has no entry for {wanted}")
+
+          with open("manifest.json", "w") as f:
+              json.dump(data, f, indent=2)
+              f.write("\n")
+          PYTHON
+
+          if git diff --quiet manifest.json; then
+            echo "manifest.json already carries this checksum"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git commit -m "release: record the ${TAG} checksum [skip ci]"
+          git push origin "HEAD:${BRANCH}"
