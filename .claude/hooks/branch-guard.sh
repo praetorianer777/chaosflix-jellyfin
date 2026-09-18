@@ -137,7 +137,21 @@ case "$tool" in
         branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached HEAD)')"
       fi
       sub="${t[i]:-}"
-      args=("${t[@]:i+1}")
+      # Redirections are not arguments of the command: "git merge --ff-only
+      # origin/main 2>&1" used to look like a merge with two targets, and every
+      # rule that inspects the argument list was reading them (#76).
+      args=()
+      skip_operand=0
+      for a in "${t[@]:i+1}"; do
+        if (( skip_operand )); then skip_operand=0; continue; fi
+        case "$a" in
+          [0-9]*'>'*|'>'*|'<'*)
+            [[ "$a" =~ (\>|\<)$ ]] && skip_operand=1
+            continue
+            ;;
+        esac
+        args+=("$a")
+      done
 
       case "$sub" in
         checkout|switch)
@@ -151,8 +165,16 @@ case "$tool" in
               created=1
             fi
           done
-          if (( !created )) && [[ "${#args[@]}" -ge 1 ]] && is_branch "${args[0]}"; then
-            branch="${args[0]}"
+          if (( !created )); then
+            # The branch is the first argument that names one: with "git checkout
+            # -q main" only args[0] was looked at, so the flag hid the branch and
+            # everything after it in the same command was judged against the
+            # branch we were on before (#76).
+            for a in "${args[@]}"; do
+              [[ "$a" == -* ]] && continue
+              if is_branch "$a"; then branch="$a"; fi
+              break
+            done
           fi
           ;;
         branch)
