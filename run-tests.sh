@@ -31,6 +31,7 @@ dotnet_run() {
 
 echo "🐚 Shell script tests"
 tests/test-release.sh
+.claude/hooks/tests/branch-guard-test.sh
 
 echo "🔨 Building plugin (net${TFM})..."
 dotnet_run build "$PLUGIN" -c Release
