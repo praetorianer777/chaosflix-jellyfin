@@ -110,6 +110,101 @@ test.describe("client profiles", () => {
 	});
 });
 
+// Every recording of a talk is offered as its own version, ordered by the
+// configured preference (#69). The order is what keeps the default pick the
+// same for anyone who never opens the selector.
+test.describe("selectable versions", () => {
+	test.afterAll(async () => {
+		await setPluginConfig(await apiContext(), { PreferredFormat: "Mp4" });
+	});
+
+	test("every recording is offered, the preferred one first", async () => {
+		const api = await apiContext();
+		await setPluginConfig(api, { PreferredFormat: "Mp4" });
+		const talk = await talkNamed(api, "Three stream talk");
+
+		const body = await playbackInfoBody(api, talk.Id, ANDROID_EXOPLAYER);
+
+		expect(body.MediaSources.map((s) => s.Name)).toEqual([
+			"HD MP4 · Deutsch",
+			"HD MP4 · English",
+			"SD MP4 · Deutsch",
+			"HD WebM · Deutsch",
+		]);
+		expect(new Set(body.MediaSources.map((s) => s.Id)).size).toBe(4);
+		for (const source of body.MediaSources) {
+			expect(source.Path).toContain("/api/ChaosflixStream/proxy/");
+			expect(source.Path).toMatch(/[?&]t=[0-9a-f]+/);
+		}
+		// The first one is still what a client that never asks gets, and it is
+		// the only one that costs a probe: the others are described by what the
+		// API says about them until they are preferred themselves.
+		expect(body.MediaSources[0].Container).toBe("mp4");
+		expect(codecReasons(body.MediaSources[0])).toEqual([]);
+		expect(body.MediaSources[0].MediaStreams).toHaveLength(3);
+		for (const other of body.MediaSources.slice(1)) {
+			expect(other.MediaStreams).toHaveLength(0);
+		}
+	});
+
+	test("the English version is selectable and serves its own recording", async () => {
+		const api = await apiContext();
+		await setPluginConfig(api, { PreferredFormat: "Mp4" });
+		const talk = await talkNamed(api, "Three stream talk");
+
+		const versions = (await playbackInfoBody(api, talk.Id, ANDROID_EXOPLAYER))
+			.MediaSources;
+		const english = versions.find((s) => s.Name === "HD MP4 · English")!;
+		expect(english.Id).not.toBe(versions[0].Id);
+
+		const picked = await playbackInfoBody(
+			api,
+			talk.Id,
+			ANDROID_EXOPLAYER,
+			english.Id,
+		);
+
+		expect(picked.ErrorCode ?? null).toBeNull();
+		expect(picked.MediaSources).toHaveLength(1);
+		expect(picked.MediaSources[0].Id).toBe(english.Id);
+		expect(picked.MediaSources[0].Path).toContain("language=eng");
+
+		// Playable from both ends: the proxy behind that version serves the
+		// recording, and Jellyfin hands the client a stream for it. Without a
+		// probed layout it is a transcode rather than a direct stream — the
+		// price of not probing every version of every talk.
+		const url = new URL(picked.MediaSources[0].Path);
+		const played = await api.get(url.pathname + url.search, {
+			headers: { Range: "bytes=0-99" },
+		});
+		expect(played.status()).toBe(206);
+		expect(played.headers()["content-type"]).toContain("video/");
+
+		const stream = await api.get(picked.MediaSources[0].TranscodingUrl!);
+		expect(stream.status()).toBe(200);
+		expect(await stream.text()).toContain("#EXTM3U");
+	});
+
+	test("switching the preference reorders what a client sees", async () => {
+		const api = await apiContext();
+		await setPluginConfig(api, { PreferredFormat: "WebM" });
+		const talk = await talkNamed(api, "Three stream talk");
+
+		// Jellyfin caches a talk's media sources for five minutes; the plugin
+		// drops that cache when the configuration changes (#36).
+		const webmFirst = await playbackInfoBody(api, talk.Id, ANDROID_EXOPLAYER);
+		expect(webmFirst.MediaSources[0].Name).toBe("HD WebM · Deutsch");
+		expect(webmFirst.MediaSources[0].Container).toBe("webm");
+
+		await setPluginConfig(api, { PreferredFormat: "Mp4" });
+		const mp4First = await playbackInfoBody(api, talk.Id, ANDROID_EXOPLAYER);
+		expect(mp4First.MediaSources[0].Name).toBe("HD MP4 · Deutsch");
+		expect(mp4First.MediaSources.map((s) => s.Name).sort()).toEqual(
+			webmFirst.MediaSources.map((s) => s.Name).sort(),
+		);
+	});
+});
+
 // jellyfin-androidtv builds its PlaybackInfo request from the media source it
 // finds on the item DTO. For a channel item Jellyfin puts a placeholder there
 // whose id is the item id — the real sources exist only in the PlaybackInfo
@@ -126,8 +221,16 @@ test.describe("Android TV client", () => {
 		const item = await (
 			await api.get(`/Users/${user}/Items/${talk.Id}`)
 		).json();
+		// Several versions do not reach the DTO: it keeps the single
+		// placeholder, which is why the app goes on sending the item id.
+		expect(item.MediaSources).toHaveLength(1);
 		const fromDto = item.MediaSources[0].Id;
 		expect(fromDto).toBe(talk.Id);
+
+		// Offering several versions must not move that id off the first one.
+		const all = await playbackInfoBody(api, talk.Id, ANDROID_EXOPLAYER);
+		expect(all.MediaSources.length).toBeGreaterThan(1);
+		expect(all.MediaSources[0].Id).toBe(fromDto);
 
 		const body = await playbackInfoBody(
 			api,

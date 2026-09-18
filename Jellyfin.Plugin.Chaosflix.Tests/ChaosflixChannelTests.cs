@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Web;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Chaosflix.Api.Models;
 using Jellyfin.Plugin.Chaosflix.Channel;
@@ -305,7 +306,7 @@ public class ChaosflixChannelTests
         Assert.Equal(100L * 1024 * 1024, source.Size);
         Assert.Equal(TimeSpan.FromSeconds(60).Ticks, source.RunTimeTicks);
         Assert.Equal((int)(100L * 1024 * 1024 * 8 / 60), source.Bitrate);
-        Assert.Equal("HD 1920x1080 (MP4) [deu-eng]", source.Name);
+        Assert.Equal("HD MP4 · Deutsch + English", source.Name);
     }
 
     [Fact]
@@ -352,7 +353,7 @@ public class ChaosflixChannelTests
     [InlineData(VideoFormat.Mp4, VideoQuality.Standard, "", "h264-sd")]
     [InlineData(VideoFormat.WebM, VideoQuality.High, "", "webm-hd")]
     [InlineData(VideoFormat.WebM, VideoQuality.Standard, "", "webm-sd")]
-    public async Task SelectsRecordingByFormatAndQuality(VideoFormat format, VideoQuality quality, string language, string expectedFolder)
+    public async Task PreferredFormatAndQualityComeFirst(VideoFormat format, VideoQuality quality, string language, string expectedFolder)
     {
         TestPlugin.Configure(c =>
         {
@@ -366,9 +367,10 @@ public class ChaosflixChannelTests
             Recording("webm-hd", "video/webm"),
             Recording("h264-hd"));
 
-        var source = Assert.Single(await Sources("event:e1"));
+        var sources = await Sources("event:e1");
 
-        Assert.Contains($"recordingFolder={expectedFolder}&", source.Path, StringComparison.Ordinal);
+        Assert.Equal(4, sources.Count);
+        Assert.Equal(expectedFolder, Folder(sources[0].Path));
     }
 
     [Fact]
@@ -379,9 +381,10 @@ public class ChaosflixChannelTests
             Recording("h264-hd", language: "deu"),
             Recording("h264-hd", language: "eng"));
 
-        var source = Assert.Single(await Sources("event:e1"));
+        var sources = await Sources("event:e1");
 
-        Assert.Contains("language=eng&t=", source.Path, StringComparison.Ordinal);
+        Assert.Contains("language=eng&t=", sources[0].Path, StringComparison.Ordinal);
+        Assert.Contains("language=deu&t=", sources[1].Path, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -391,9 +394,9 @@ public class ChaosflixChannelTests
             Recording("av1-hd"),
             Recording("webm-sd", "video/webm", highQuality: false, width: 720));
 
-        var source = Assert.Single(await Sources("event:e1"));
+        var sources = await Sources("event:e1");
 
-        Assert.Contains("recordingFolder=webm-sd", source.Path, StringComparison.Ordinal);
+        Assert.Equal(new[] { "webm-sd", "av1-hd" }, sources.Select(s => Folder(s.Path)));
     }
 
     [Fact]
@@ -403,9 +406,131 @@ public class ChaosflixChannelTests
             Recording("h264-hd-small", width: 1280),
             Recording("h264-hd-large", width: 1920));
 
-        var source = Assert.Single(await Sources("event:e1"));
+        var sources = await Sources("event:e1");
 
-        Assert.Contains("recordingFolder=h264-hd-large", source.Path, StringComparison.Ordinal);
+        Assert.Equal("h264-hd-large", Folder(sources[0].Path));
+    }
+
+    [Fact]
+    public async Task EveryUsableRecordingIsOfferedAsItsOwnVersion()
+    {
+        EventWithRecordings("e1",
+            Recording("h264-hd", language: "deu"),
+            Recording("webm-hd", "video/webm", language: "deu"),
+            Recording("h264-sd", highQuality: false, width: 720, language: "eng"),
+            Recording("mp3", mimeType: "audio/mpeg"));
+
+        var sources = await Sources("event:e1");
+
+        Assert.Equal(new[] { "h264-hd", "h264-sd", "webm-hd" }, sources.Select(s => Folder(s.Path)));
+        Assert.Equal(
+            new[] { "HD MP4 · Deutsch", "SD MP4 · English", "HD WebM · Deutsch" },
+            sources.Select(s => s.Name));
+        Assert.Equal(sources.Count, sources.Select(s => s.Id).Distinct().Count());
+        Assert.All(sources, s => Assert.True(Guid.TryParseExact(s.Id, "N", out _)));
+        Assert.All(sources, s => Assert.Contains("&t=", s.Path, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ChangingThePreferenceReordersTheSameVersions()
+    {
+        EventWithRecordings("e1",
+            Recording("h264-hd", language: "deu"),
+            Recording("webm-hd", "video/webm", language: "deu"));
+
+        var mp4First = await Sources("event:e1");
+        TestPlugin.Configure(c => c.PreferredFormat = VideoFormat.WebM);
+        var webmFirst = await Sources("event:e1");
+
+        Assert.Equal(new[] { "h264-hd", "webm-hd" }, mp4First.Select(s => Folder(s.Path)));
+        Assert.Equal(new[] { "webm-hd", "h264-hd" }, webmFirst.Select(s => Folder(s.Path)));
+    }
+
+    [Fact]
+    public async Task VersionsThatWouldShareANameAreToldApartByResolution()
+    {
+        EventWithRecordings("e1",
+            Recording("h264-hd-large", width: 1920),
+            Recording("h264-hd-small", width: 1280));
+
+        var sources = await Sources("event:e1");
+
+        Assert.Equal(
+            new[] { "HD MP4 · English (1920x1080)", "HD MP4 · English (1280x720)" },
+            sources.Select(s => s.Name));
+    }
+
+    [Theory]
+    [InlineData("deu", "HD MP4 · Deutsch")]
+    [InlineData("eng", "HD MP4 · English")]
+    [InlineData("fra", "HD MP4 · Français")]
+    [InlineData("deu-eng", "HD MP4 · Deutsch + English")]
+    [InlineData("zho", "HD MP4 · ZHO")]
+    [InlineData("", "HD MP4 · Original")]
+    public async Task VersionNameSpellsOutTheLanguage(string language, string expected)
+    {
+        EventWithRecordings("e1", Recording("h264-hd", language: language));
+
+        Assert.Equal(expected, Assert.Single(await Sources("event:e1")).Name);
+    }
+
+    [Fact]
+    public async Task VersionListIsCapped()
+    {
+        EventWithRecordings("e1",
+            Enumerable.Range(0, ChaosflixChannel.MaxSelectableSources + 3)
+                .Select(i => Recording($"h264-hd-{i}", width: 1920 - i))
+                .ToArray());
+
+        Assert.Equal(ChaosflixChannel.MaxSelectableSources, (await Sources("event:e1")).Count);
+    }
+
+    [Fact]
+    public async Task OnlyThePreferredRecordingIsProbed()
+    {
+        EventWithRecordings("e1",
+            Recording("h264-hd"),
+            Recording("webm-hd", "video/webm"),
+            Recording("h264-sd", highQuality: false, width: 720));
+
+        var sources = await Sources("event:e1");
+
+        await _encoder.Received(1).GetMediaInfo(Arg.Any<MediaInfoRequest>(), Arg.Any<CancellationToken>());
+        Assert.Equal(2, sources[0].MediaStreams.Count);
+        Assert.Equal(1, sources[0].DefaultAudioStreamIndex);
+        Assert.All(sources.Skip(1), s => Assert.Empty(s.MediaStreams));
+    }
+
+    [Fact]
+    public async Task OnlyThePreferredVersionDeclaresStreamsEvenAfterThePreferenceMoved()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"), Recording("webm-hd", "video/webm"));
+        await Sources("event:e1");
+
+        TestPlugin.Configure(c => c.PreferredFormat = VideoFormat.WebM);
+        var sources = await Sources("event:e1");
+
+        // Jellyfin sorts the sources by the width of their first video stream,
+        // so the already probed MP4 must not carry its layout here: it would
+        // overtake the version the configuration prefers.
+        Assert.Equal("webm-hd", Folder(sources[0].Path));
+        Assert.NotEmpty(sources[0].MediaStreams);
+        Assert.Empty(sources[1].MediaStreams);
+        Assert.Null(sources[1].DefaultAudioStreamIndex);
+    }
+
+    [Fact]
+    public async Task TheFirstVersionKeepsTheItemIdAndTheOthersDoNot()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"), Recording("webm-hd", "video/webm"));
+        var itemId = Guid.Parse("11112222-3333-4444-5555-666677778888");
+        var library = Substitute.For<ILibraryManager>();
+        library.GetItemIds(Arg.Is<InternalItemsQuery>(q => q.ExternalId == "event:e1")).Returns(new[] { itemId });
+
+        var sources = (await Channel(library).GetChannelItemMediaInfo("event:e1", CancellationToken.None)).ToList();
+
+        Assert.Equal(itemId.ToString("N"), sources[0].Id);
+        Assert.DoesNotContain(sources.Skip(1), s => s.Id == itemId.ToString("N"));
     }
 
     [Fact]
@@ -616,6 +741,9 @@ public class ChaosflixChannelTests
 
         public void Advance(TimeSpan by) => _now += by;
     }
+
+    private static string Folder(string proxyUrl) =>
+        HttpUtility.ParseQueryString(new Uri(proxyUrl).Query)["recordingFolder"]!;
 
     private static List<MediaStream> Streams(params MediaStreamType[] types) =>
         types.Select((t, i) => new MediaStream { Type = t, Index = i }).ToList();

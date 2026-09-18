@@ -21,6 +21,7 @@ All content is sourced from [media.ccc.de](https://media.ccc.de) via their publi
 - 🆕 **Latest talks** — newly released recordings on your home screen
 - 🔄 **Scheduled sync** — background task keeps cache fresh (every 6h)
 - ⚙️ **Quality & format preferences** — HD/SD, MP4/WebM, language selection
+- 🎚️ **Every recording selectable** — pick quality or language per playback from the player's version list
 
 ## Installation
 
@@ -81,6 +82,11 @@ Go to **Dashboard → Plugins → Chaosflix** to set:
 | Preferred Quality | HD (1080p) / SD (576p) | HD |
 | Preferred Format | MP4 (H.264) / WebM (VP9) | MP4 |
 | Preferred Language | Original / Deutsch / English | Original |
+
+Every recording of a talk is offered as its own version ("HD MP4 · Deutsch",
+"SD WebM · English") in the player's version selector; these settings decide
+which of them is the default. A viewer can pick another one per playback and
+per device without changing anything here.
 
 ### Scheduled Sync
 
