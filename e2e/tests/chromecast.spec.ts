@@ -3,6 +3,7 @@ import {
 	castClient,
 	castStreamUrl,
 	fetchCastMedia,
+	receiverClient,
 } from "../helpers/chromecast";
 import { apiContext, setPluginConfig, talkNamed } from "../helpers/jellyfin";
 import { CHROMECAST, playbackInfoFor } from "../helpers/profiles";
@@ -52,6 +53,50 @@ test.describe("Chromecast playback", () => {
 		// off is what keeps that address away from the device (#55).
 		expect(castStreamUrl(source, talk.Id).playMethod).not.toBe("DirectPlay");
 		expect(source.SupportsDirectPlay).toBe(false);
+	});
+
+	// Everything the receiver does between being told to play and asking for a
+	// media source, in the shape jellyfin-chromecast sends it: the item lookup
+	// of onStopPlayerBeforePlaybackDone and the PlaybackInfo of
+	// playItemInternal, neither of which carries a user id. A talk is a channel
+	// item, so it is served by the plugin rather than from the library, and a
+	// server that wanted a user id here would fail the receiver alone (#55).
+	test("the receiver reaches a playable source without sending a user id", async () => {
+		const api = await apiContext();
+		const talk = await talkNamed(api, "Three stream talk");
+		const receiver = await receiverClient();
+
+		const lookup = await receiver.get(`/Items/${talk.Id}`);
+		expect(lookup.status()).toBe(200);
+		const item = await lookup.json();
+		// The receiver hands this straight to playItemInternal and reads only
+		// these; a channel item has to look like any other video here.
+		expect(item.Id).toBe(talk.Id);
+		expect(item.MediaType).toBe("Video");
+		expect(item.IsFolder).toBe(false);
+		expect(item.ServerId).toBeTruthy();
+
+		const response = await receiver.post(`/Items/${talk.Id}/PlaybackInfo`, {
+			data: {
+				DeviceProfile: CHROMECAST,
+				MaxStreamingBitrate: CHROMECAST.MaxStreamingBitrate,
+				StartTimeTicks: 0,
+			},
+		});
+		expect(response.status()).toBe(200);
+		const info = await response.json();
+		expect(info.ErrorCode ?? null).toBeNull();
+		expect(info.PlaySessionId).toBeTruthy();
+
+		// getOptimalMediaSource falls through to transcoding, createStreamInfo
+		// recognises HLS by TranscodingSubProtocol alone and dereferences
+		// TranscodingUrl unchecked, and createMediaInformation takes the
+		// duration from the source rather than from the item.
+		const source = info.MediaSources[0];
+		expect(source.SupportsTranscoding).toBe(true);
+		expect(source.TranscodingSubProtocol).toBe("hls");
+		expect(source.TranscodingUrl).toBeTruthy();
+		expect(source.RunTimeTicks).toBeGreaterThan(0);
 	});
 
 	test("the url does not depend on which client asked first", async () => {
