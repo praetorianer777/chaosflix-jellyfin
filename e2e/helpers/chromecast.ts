@@ -1,4 +1,8 @@
-import { type APIRequestContext, type APIResponse, request } from "@playwright/test";
+import {
+	type APIRequestContext,
+	type APIResponse,
+	request,
+} from "@playwright/test";
 import { JELLYFIN_URL } from "../playwright.config";
 import { readToken } from "./jellyfin";
 import type { MediaSource } from "./profiles";
@@ -14,6 +18,22 @@ import type { MediaSource } from "./profiles";
 /** A request context with no Authorization header, like the receiver's. */
 export async function castClient(): Promise<APIRequestContext> {
 	return request.newContext();
+}
+
+/**
+ * The session jellyfin-chromecast itself opens: the sender's token, a device id
+ * of the receiver's own, and — unlike every other client — no user id on the
+ * item lookup or on PlaybackInfo, because the SDK leaves the user to the token.
+ */
+export async function receiverClient(): Promise<APIRequestContext> {
+	return request.newContext({
+		baseURL: JELLYFIN_URL,
+		extraHTTPHeaders: {
+			Authorization:
+				'MediaBrowser Client="Chromecast", Device="Google Cast", ' +
+				`DeviceId="chaosflix-cast", Version="0.0.0", Token="${readToken()}"`,
+		},
+	});
 }
 
 export type CastStream = {
