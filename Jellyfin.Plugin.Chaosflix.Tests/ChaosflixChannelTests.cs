@@ -274,7 +274,10 @@ public class ChaosflixChannelTests
 
         var source = Assert.Single(await Sources("event:e1"));
 
-        Assert.Equal("http://jellyfin:8096/api/ChaosflixStream/proxy/e1?recordingFolder=h264-hd&language=deu-eng", source.Path);
+        Assert.StartsWith(
+            "http://jellyfin:8096/api/ChaosflixStream/proxy/e1?recordingFolder=h264-hd&language=deu-eng&t=",
+            source.Path,
+            StringComparison.Ordinal);
         Assert.Equal(MediaProtocol.Http, source.Protocol);
         Assert.False(source.IsRemote);
         Assert.False(source.SupportsDirectPlay);
@@ -333,7 +336,7 @@ public class ChaosflixChannelTests
 
         var source = Assert.Single(await Sources("event:e1"));
 
-        Assert.EndsWith("language=eng", source.Path, StringComparison.Ordinal);
+        Assert.Contains("language=eng&t=", source.Path, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -44,8 +44,18 @@ public class ChaosflixStreamController : ControllerBase
     public async Task ProxyStream(
         [FromRoute] string eventGuid,
         [FromQuery] string? recordingFolder = null,
-        [FromQuery] string? language = null)
+        [FromQuery] string? language = null,
+        [FromQuery(Name = ProxySignature.QueryParameter)] string? t = null)
     {
+        // The endpoint is anonymous because the server's own ffmpeg fetches this
+        // url; the signature is what keeps it from being a general purpose relay.
+        if (!ProxySignature.Verify(eventGuid, recordingFolder, language, t))
+        {
+            _logger.LogWarning("Rejected unsigned proxy request for {EventGuid}", eventGuid);
+            Response.StatusCode = 401;
+            return;
+        }
+
         var cancellationToken = HttpContext.RequestAborted;
 
         var cccEvent = await _apiClient.GetEventAsync(eventGuid, cancellationToken).ConfigureAwait(false);

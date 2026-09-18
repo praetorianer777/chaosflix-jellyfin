@@ -567,9 +567,13 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         var bestRecording = sorted[0];
 
+        // Signed so the proxy only serves recordings this plugin picked (#2).
+        var signature = ProxySignature.Create(eventGuid, bestRecording.Folder, bestRecording.Language);
+
         var proxyUrl = $"{serverUrl}/api/ChaosflixStream/proxy/{eventGuid}"
             + $"?recordingFolder={Uri.EscapeDataString(bestRecording.Folder)}"
-            + $"&language={Uri.EscapeDataString(bestRecording.Language)}";
+            + $"&language={Uri.EscapeDataString(bestRecording.Language)}"
+            + $"&{ProxySignature.QueryParameter}={signature}";
 
         // Probe the actual file to discover the real stream layout.
         // CCC MP4s vary: some have 2 streams (video+audio), some have 3

@@ -195,7 +195,7 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
         _cdn.AddRedirect("/cdn/hd.mp4", _cdn.AddFile("/mirror-b/hd.mp4", Video));
         var second = NewController();
 
-        await second.ProxyStream("e1", null, null);
+        await second.ProxyStream("e1", null, null, Sign("e1", null, null));
 
         Assert.Equal(200, second.Response.StatusCode);
         Assert.Equal(Video, ((MemoryStream)second.Response.Body).ToArray());
@@ -241,8 +241,48 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
         Assert.Empty(_cdn.Requests);
     }
 
+    // The proxy only serves urls it signed itself (#2); tests go through the
+    // same signature the channel puts on the media source path.
+    [Fact]
+    public async Task UnsignedRequestIsRejected()
+    {
+        _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
+
+        await _controller.ProxyStream("e1", "h264-hd", "eng", null);
+
+        Assert.Equal(401, _controller.Response.StatusCode);
+        Assert.Empty(Body());
+        Assert.Empty(_cdn.Requests);
+    }
+
+    [Fact]
+    public async Task SignatureForAnotherRecordingIsRejected()
+    {
+        _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
+
+        // Signed for the SD recording, used for the HD one.
+        await _controller.ProxyStream("e1", "h264-hd", "eng", Sign("e1", "h264-sd", "eng"));
+
+        Assert.Equal(401, _controller.Response.StatusCode);
+        Assert.Empty(_cdn.Requests);
+    }
+
+    [Fact]
+    public async Task SignatureOfAnotherEventIsRejected()
+    {
+        _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
+
+        await _controller.ProxyStream("e1", "h264-hd", "eng", Sign("other-event", "h264-hd", "eng"));
+
+        Assert.Equal(401, _controller.Response.StatusCode);
+        Assert.Empty(_cdn.Requests);
+    }
+
+    private static string Sign(string guid, string? folder, string? language) =>
+        ProxySignature.Create(guid, folder, language);
+
     private Task Proxy(string guid, string? folder = null, string? language = null) =>
-        _controller.ProxyStream(guid, folder, language);
+        _controller.ProxyStream(guid, folder, language, Sign(guid, folder, language));
 
     private byte[] Body() => ((MemoryStream)_controller.Response.Body).ToArray();
 }
