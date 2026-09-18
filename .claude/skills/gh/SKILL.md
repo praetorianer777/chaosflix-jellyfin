@@ -94,8 +94,10 @@ gh run view <run-id> --log-failed
 
 ## Releases
 
-Releases are built with `./release.sh` (commits and tags on `main`) — that is the
-user's job, not part of issue work. Read-only:
+Releases are cut with `./release.sh` (commits and tags on `main`) — that is the
+user's job, not part of issue work. The script builds nothing; pushing the `v*`
+tag is what makes `release.yml` build, publish the ZIP and commit its checksum.
+Read-only:
 
 ```bash
 gh release list --limit 5
