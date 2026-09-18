@@ -221,6 +221,9 @@ test.describe("Android TV client", () => {
 		const item = await (
 			await api.get(`/Users/${user}/Items/${talk.Id}`)
 		).json();
+		// Several versions do not reach the DTO: it keeps the single
+		// placeholder, which is why the app goes on sending the item id.
+		expect(item.MediaSources).toHaveLength(1);
 		const fromDto = item.MediaSources[0].Id;
 		expect(fromDto).toBe(talk.Id);
 
