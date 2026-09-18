@@ -1,3 +1,4 @@
+using System.Net.Http;
 using Jellyfin.Plugin.Chaosflix.Api;
 using Jellyfin.Plugin.Chaosflix.Channel;
 using MediaBrowser.Controller;
@@ -15,6 +16,11 @@ public class ChaosflixServiceRegistrator : IPluginServiceRegistrator
     /// <inheritdoc />
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
+        // Redirect resolution needs the 302 itself, not the mirror behind it.
+        serviceCollection
+            .AddHttpClient(CccApiClient.RedirectClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
         serviceCollection.AddSingleton<CccApiClient>();
         serviceCollection.AddSingleton<IChannel, ChaosflixChannel>();
     }

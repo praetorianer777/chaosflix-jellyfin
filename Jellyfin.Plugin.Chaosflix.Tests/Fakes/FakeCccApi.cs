@@ -12,6 +12,7 @@ namespace Jellyfin.Plugin.Chaosflix.Tests.Fakes;
 public sealed class FakeCccApi : HttpMessageHandler, IHttpClientFactory
 {
     private readonly Dictionary<string, Func<HttpResponseMessage>> _routes = new(StringComparer.Ordinal);
+    private HttpClient? _redirectClient;
 
     public List<string> Requests { get; } = new();
 
@@ -35,7 +36,11 @@ public sealed class FakeCccApi : HttpMessageHandler, IHttpClientFactory
 
     // The client must not dispose the shared handler, otherwise a second
     // CreateClient call (or a disposed CccApiClient) breaks later requests.
-    public HttpClient CreateClient(string name) => new(this, disposeHandler: false);
+    // Redirect resolution must reach the real loopback CDN instead of this fake,
+    // and must see the 302 rather than following it.
+    public HttpClient CreateClient(string name) => name == CccApiClient.RedirectClientName
+        ? _redirectClient ??= new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+        : new HttpClient(this, disposeHandler: false);
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

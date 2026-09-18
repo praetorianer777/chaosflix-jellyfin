@@ -46,7 +46,9 @@ public class ChaosflixStreamController : ControllerBase
         [FromQuery] string? recordingFolder = null,
         [FromQuery] string? language = null)
     {
-        var cccEvent = await _apiClient.GetEventAsync(eventGuid, CancellationToken.None).ConfigureAwait(false);
+        var cancellationToken = HttpContext.RequestAborted;
+
+        var cccEvent = await _apiClient.GetEventAsync(eventGuid, cancellationToken).ConfigureAwait(false);
         if (cccEvent?.Recordings == null)
         {
             Response.StatusCode = 404;
@@ -72,40 +74,72 @@ public class ChaosflixStreamController : ControllerBase
             .ThenByDescending(r => r.HighQuality ? 1 : 0)
             .First();
 
-        var resolvedUrl = await _apiClient.ResolveRedirectAsync(recording.RecordingUrl, CancellationToken.None)
+        var originalUrl = recording.RecordingUrl;
+        var resolvedUrl = await _apiClient.ResolveRedirectAsync(originalUrl, cancellationToken)
             .ConfigureAwait(false);
 
         _logger.LogDebug("Proxying {EventGuid} from {Url}", eventGuid, resolvedUrl);
 
-        // Build upstream request, forwarding Range header if present
-        using var upstreamRequest = new HttpRequestMessage(
-            HttpContext.Request.Method == "HEAD" ? HttpMethod.Head : HttpMethod.Get,
-            resolvedUrl);
-
-        if (Request.Headers.TryGetValue("Range", out var rangeHeader))
+        RangeHeaderValue? range = null;
+        if (Request.Headers.TryGetValue("Range", out var rangeHeader)
+            && !RangeHeaderValue.TryParse(rangeHeader.ToString(), out range))
         {
-            upstreamRequest.Headers.Range = RangeHeaderValue.Parse(rangeHeader.ToString());
+            // RFC 9110: a Range header with invalid syntax is ignored, not rejected.
+            _logger.LogDebug("Ignoring malformed Range header {Range}", rangeHeader.ToString());
+            range = null;
         }
 
-        using var upstreamResponse = await _proxyClient.SendAsync(
-            upstreamRequest,
-            HttpCompletionOption.ResponseHeadersRead,
-            HttpContext.RequestAborted).ConfigureAwait(false);
+        var method = HttpContext.Request.Method == "HEAD" ? HttpMethod.Head : HttpMethod.Get;
+
+        var upstreamResponse = await SendUpstreamAsync(method, resolvedUrl, range, cancellationToken)
+            .ConfigureAwait(false);
+
+        // A cached mirror can die long before its two-hour cache entry expires; drop it
+        // and give the CDN one chance to hand out a mirror that still has the recording.
+        if (upstreamResponse?.IsSuccessStatusCode != true
+            && !string.Equals(resolvedUrl, originalUrl, StringComparison.Ordinal))
+        {
+            _logger.LogWarning(
+                "Mirror {Url} failed for {EventGuid} ({Status}), retrying via {Original}",
+                resolvedUrl,
+                eventGuid,
+                upstreamResponse?.StatusCode.ToString() ?? "no response",
+                originalUrl);
+
+            upstreamResponse?.Dispose();
+            _apiClient.InvalidateRedirect(originalUrl);
+            upstreamResponse = await SendUpstreamAsync(method, originalUrl, range, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (upstreamResponse == null)
+        {
+            Response.StatusCode = 502;
+            return;
+        }
+
+        using var finalResponse = upstreamResponse;
 
         // Set response status (200 or 206)
-        Response.StatusCode = (int)upstreamResponse.StatusCode;
+        Response.StatusCode = (int)finalResponse.StatusCode;
+
+        if (!finalResponse.IsSuccessStatusCode)
+        {
+            // An error body is not media, so it gets neither Accept-Ranges nor a video type.
+            return;
+        }
 
         // Forward relevant headers
-        if (upstreamResponse.Content.Headers.ContentLength.HasValue)
+        if (finalResponse.Content.Headers.ContentLength.HasValue)
         {
-            Response.ContentLength = upstreamResponse.Content.Headers.ContentLength.Value;
+            Response.ContentLength = finalResponse.Content.Headers.ContentLength.Value;
         }
 
         Response.Headers["Accept-Ranges"] = "bytes";
 
-        if (upstreamResponse.Content.Headers.ContentType != null)
+        if (finalResponse.Content.Headers.ContentType != null)
         {
-            Response.ContentType = upstreamResponse.Content.Headers.ContentType.ToString();
+            Response.ContentType = finalResponse.Content.Headers.ContentType.ToString();
         }
         else
         {
@@ -113,17 +147,42 @@ public class ChaosflixStreamController : ControllerBase
                 ? "video/mp4" : "video/webm";
         }
 
-        if (upstreamResponse.Content.Headers.ContentRange != null)
+        if (finalResponse.Content.Headers.ContentRange != null)
         {
-            Response.Headers["Content-Range"] = upstreamResponse.Content.Headers.ContentRange.ToString();
+            Response.Headers["Content-Range"] = finalResponse.Content.Headers.ContentRange.ToString();
         }
 
         // Stream body (skip for HEAD requests)
         if (HttpContext.Request.Method != "HEAD")
         {
-            await using var upstreamStream = await upstreamResponse.Content.ReadAsStreamAsync(HttpContext.RequestAborted)
+            await using var upstreamStream = await finalResponse.Content.ReadAsStreamAsync(cancellationToken)
                 .ConfigureAwait(false);
-            await upstreamStream.CopyToAsync(Response.Body, HttpContext.RequestAborted).ConfigureAwait(false);
+            await upstreamStream.CopyToAsync(Response.Body, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<HttpResponseMessage?> SendUpstreamAsync(
+        HttpMethod method,
+        string url,
+        RangeHeaderValue? range,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(method, url);
+        if (range != null)
+        {
+            request.Headers.Range = range;
+        }
+
+        try
+        {
+            return await _proxyClient
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Upstream request to {Url} failed", url);
+            return null;
         }
     }
 }

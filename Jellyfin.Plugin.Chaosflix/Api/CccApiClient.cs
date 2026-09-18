@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading;
@@ -17,6 +18,12 @@ public class CccApiClient : IDisposable
     /// <summary>Default public API endpoint; overridable for mirrors and tests.</summary>
     public const string DefaultBaseUrl = "https://api.media.ccc.de/public";
 
+    /// <summary>
+    /// Name of the <see cref="IHttpClientFactory"/> client used to resolve CDN redirects.
+    /// It must be configured with <c>AllowAutoRedirect = false</c>.
+    /// </summary>
+    public const string RedirectClientName = "Chaosflix.CdnRedirect";
+
     /// <summary>Conference list changes rarely — cache for 1 hour.</summary>
     private static readonly TimeSpan ConferenceListTtl = TimeSpan.FromHours(1);
 
@@ -29,6 +36,7 @@ public class CccApiClient : IDisposable
     /// <summary>Search results — cache for 10 minutes.</summary>
     private static readonly TimeSpan SearchTtl = TimeSpan.FromMinutes(10);
 
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly HttpClient _httpClient;
     private readonly ILogger<CccApiClient> _logger;
     private readonly MemoryCache _cache = new();
@@ -38,6 +46,7 @@ public class CccApiClient : IDisposable
     /// </summary>
     public CccApiClient(IHttpClientFactory httpClientFactory, ILogger<CccApiClient> logger)
     {
+        _httpClientFactory = httpClientFactory;
         _httpClient = httpClientFactory.CreateClient(nameof(CccApiClient));
         _httpClient.DefaultRequestHeaders.Accept.Add(
             new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
@@ -81,9 +90,17 @@ public class CccApiClient : IDisposable
         return _cache.GetOrCreateAsync($"event:{guid}", EventTtl, async ct =>
         {
             _logger.LogDebug("Fetching event {Guid} from CCC API", guid);
-            return await _httpClient
-                .GetFromJsonAsync<CccEvent>(Url($"/events/{guid}"), ct)
-                .ConfigureAwait(false);
+            try
+            {
+                return await _httpClient
+                    .GetFromJsonAsync<CccEvent>(Url($"/events/{guid}"), ct)
+                    .ConfigureAwait(false);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                _logger.LogDebug("Event {Guid} is unknown to the CCC API", guid);
+                return null;
+            }
         }, cancellationToken);
     }
 
@@ -122,12 +139,11 @@ public class CccApiClient : IDisposable
     /// </summary>
     public async Task<string> ResolveRedirectAsync(string url, CancellationToken cancellationToken)
     {
-        return await _cache.GetOrCreateAsync($"redirect:{url}", TimeSpan.FromHours(2), async ct =>
+        return await _cache.GetOrCreateAsync(RedirectCacheKey(url), TimeSpan.FromHours(2), async ct =>
         {
             try
             {
-                using var noRedirectHandler = new HttpClientHandler { AllowAutoRedirect = false };
-                using var client = new HttpClient(noRedirectHandler);
+                var client = _httpClientFactory.CreateClient(RedirectClientName);
                 using var request = new HttpRequestMessage(HttpMethod.Head, new Uri(url));
                 using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
                     .ConfigureAwait(false);
@@ -142,7 +158,7 @@ public class CccApiClient : IDisposable
                     return resolved;
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogDebug(ex, "Failed to resolve redirect for {Url}, using original", url);
             }
@@ -150,6 +166,14 @@ public class CccApiClient : IDisposable
             return url;
         }, cancellationToken);
     }
+
+    /// <summary>
+    /// Forgets the cached mirror for <paramref name="url"/> so that the next resolution
+    /// asks the CDN again. Used when the cached mirror stopped serving the recording.
+    /// </summary>
+    public void InvalidateRedirect(string url) => _cache.Remove(RedirectCacheKey(url));
+
+    private static string RedirectCacheKey(string url) => $"redirect:{url}";
 
     /// <inheritdoc />
     public void Dispose()
