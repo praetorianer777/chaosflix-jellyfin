@@ -4,7 +4,7 @@
     "name": "Chaosflix",
     "description": "Browse and stream Chaos Computer Club conference talks from media.ccc.de directly in Jellyfin. Includes watch history, resume, SyncPlay support, popular/recommended talks, year-based browsing, and related talk suggestions.",
     "overview": "CCC Media Channel for Jellyfin",
-    "owner": "chaosflix-jellyfin",
+    "owner": "praetorianer777",
     "category": "Channels",
     "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg",
     "versions": [

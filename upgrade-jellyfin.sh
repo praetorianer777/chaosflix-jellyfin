@@ -12,7 +12,7 @@ set -euo pipefail
 # What it does:
 #   1. Detects the latest Jellyfin NuGet package version (or uses provided)
 #   2. Updates .csproj NuGet references
-#   3. Updates targetAbi in manifest.json
+#   3. Updates targetAbi in meta.json (release.sh copies it to manifest.json)
 #   4. Updates .NET SDK version if needed (net9.0 → net10.0 etc.)
 #   5. Attempts a Docker build to verify compatibility
 #   6. Reports any breaking changes / build errors
@@ -25,7 +25,7 @@ set -euo pipefail
 # ──────────────────────────────────────────────────────────
 
 CSPROJ="Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj"
-MANIFEST="manifest.json"
+META="Jellyfin.Plugin.Chaosflix/meta.json"
 
 # ── Detect current version ───────────────────────────────
 
@@ -75,19 +75,26 @@ sed -i "s|Include=\"Jellyfin.Controller\" Version=\"[^\"]*\"|Include=\"Jellyfin.
 sed -i "s|Include=\"Jellyfin.Model\" Version=\"[^\"]*\"|Include=\"Jellyfin.Model\" Version=\"${TARGET_VERSION}\"|" "$CSPROJ"
 echo "   ✅ ${CSPROJ}"
 
-# ── Update targetAbi in manifest.json ────────────────────
+# ── Update targetAbi in meta.json ────────────────────────
 
+# targetAbi is the *minimum* server version that may install and load the
+# plugin, not the version it was built against. meta.json is the single source
+# of truth; release.sh copies it into the manifest entry it writes. Published
+# manifest entries keep the targetAbi their ZIP was released with.
 TARGET_ABI="${TARGET_MAJOR}.0.0"
-python3 -c "
-import json
-with open('${MANIFEST}', 'r') as f:
+META="${META}" TARGET_ABI="${TARGET_ABI}" python3 -c "
+import json, os
+
+path = os.environ['META']
+with open(path) as f:
     data = json.load(f)
-data[0]['versions'][0]['targetAbi'] = '${TARGET_ABI}'
-with open('${MANIFEST}', 'w') as f:
+data['targetAbi'] = os.environ['TARGET_ABI']
+with open(path, 'w') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
 "
-echo "   ✅ ${MANIFEST} (targetAbi: ${TARGET_ABI})"
+echo "   ✅ ${META} (targetAbi: ${TARGET_ABI})"
+echo "      manifest.json picks it up with the next ./release.sh"
 
 # ── Check if .NET SDK image needs updating ───────────────
 
@@ -151,6 +158,6 @@ else
     echo "     Check ChaosflixServiceRegistrator.cs"
     echo ""
     echo "To revert:"
-    echo "  git checkout -- ${CSPROJ} ${MANIFEST}"
+    echo "  git checkout -- ${CSPROJ} ${META}"
     echo ""
 fi
