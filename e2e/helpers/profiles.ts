@@ -85,7 +85,9 @@ export const BROWSER_WITH_H264 = profile(
 );
 
 export type MediaSource = {
+	Id: string;
 	Path: string;
+	SupportsDirectPlay: boolean;
 	Container: string;
 	IsRemote: boolean;
 	SupportsDirectStream: boolean;
