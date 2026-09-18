@@ -102,20 +102,14 @@ On failure a screenshot and the last 400 logcat lines land in
 
 ## How it runs in CI
 
-The workflow lives in [`ci/android-e2e.yml`](ci/android-e2e.yml) and has to be
-moved into place once:
+The workflow lives in
+[`.github/workflows/android-e2e.yml`](../../.github/workflows/android-e2e.yml);
+it used to sit next to this suite in `e2e/android/ci/` and was moved into place
+with `git mv` once a token with the `workflow` scope was available.
 
-```sh
-mkdir -p .github/workflows
-git mv e2e/android/ci/android-e2e.yml .github/workflows/android-e2e.yml
-```
-
-It is shipped next to the suite rather than under `.github/workflows/` because
-pushing a workflow file needs a token with the `workflow` scope, which the token
-that created this branch does not have.
-
-It runs nightly and on demand, never on
-push. It starts the stack on the runner, then hands
+It runs nightly (03:17 UTC) and on demand via `workflow_dispatch`, never on
+push — the normal CI workflow (`.github/workflows/ci.yml`) runs `run-tests.sh`
+without `ANDROID_E2E`, so it never boots an emulator. It starts the stack on the runner, then hands
 `reactivecircus/android-emulator-runner` the emulator part and lets it call
 `e2e/android/run.sh` with `ANDROID_E2E_USE_RUNNING_EMULATOR=1` and
 `E2E_REUSE_STACK=1`. The `Enable KVM` step is what makes the runner's `/dev/kvm`
