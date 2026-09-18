@@ -8,8 +8,35 @@ export const PLUGIN_ID = "c4a05f11-4ccc-4b00-bdea-dbeef1337000";
 export const FAKE_API = "http://fake-ccc:3000/public";
 export const CONFERENCE_TITLE = "E2E Congress 2025";
 
-const AUTH_HEADER =
-	'MediaBrowser Client="chaosflix-e2e", Device="playwright", DeviceId="chaosflix-e2e", Version="1.0.0"';
+export type Client = { name: string; device: string; deviceId: string };
+
+const SUITE_CLIENT: Client = {
+	name: "chaosflix-e2e",
+	device: "playwright",
+	deviceId: "chaosflix-e2e",
+};
+
+/**
+ * Two clients the way Jellyfin tells them apart: by the DeviceId in the
+ * authorization header. Each gets its own session, so what one reports has to
+ * travel through the server's user data to reach the other.
+ */
+export const WEB_CLIENT: Client = {
+	name: "Jellyfin Web",
+	device: "chromium",
+	deviceId: "chaosflix-e2e-web",
+};
+
+export const ANDROID_CLIENT: Client = {
+	name: "Jellyfin Android",
+	device: "pixel-emulator",
+	deviceId: "chaosflix-e2e-android",
+};
+
+const authHeader = (client: Client, token: string) =>
+	`MediaBrowser Client="${client.name}", Device="${client.device}", ` +
+	`DeviceId="${client.deviceId}", Version="1.0.0"` +
+	(token ? `, Token="${token}"` : "");
 
 export type PluginConfig = {
 	PreferredQuality?: "High" | "Standard";
@@ -30,13 +57,26 @@ export function readToken(): string {
 	return fs.readFileSync(TOKEN_FILE, "utf8").trim();
 }
 
-export async function apiContext(token: string = readTokenIfPresent()): Promise<APIRequestContext> {
+export async function apiContext(
+	token: string = readTokenIfPresent(),
+	client: Client = SUITE_CLIENT,
+): Promise<APIRequestContext> {
 	return request.newContext({
 		baseURL: JELLYFIN_URL,
-		extraHTTPHeaders: {
-			Authorization: token ? `${AUTH_HEADER}, Token="${token}"` : AUTH_HEADER,
-		},
+		extraHTTPHeaders: { Authorization: authHeader(client, token) },
 	});
+}
+
+/**
+ * Signs the same user in again as a different device. The suite's shared token
+ * belongs to one device, and reusing it would make both "clients" the same
+ * session, which is exactly what the cross-client tests must not do.
+ */
+export async function clientContext(
+	client: Client,
+): Promise<APIRequestContext> {
+	const anonymous = await apiContext("", client);
+	return apiContext(await authenticate(anonymous), client);
 }
 
 function readTokenIfPresent(): string {
@@ -165,11 +205,13 @@ export async function runScheduledTask(
 	key: string,
 ): Promise<void> {
 	const task = async () =>
-		((await (await api.get("/ScheduledTasks")).json()) as Array<{
-			Key: string;
-			Id: string;
-			State: string;
-		}>).find((t) => t.Key === key)!;
+		(
+			(await (await api.get("/ScheduledTasks")).json()) as Array<{
+				Key: string;
+				Id: string;
+				State: string;
+			}>
+		).find((t) => t.Key === key)!;
 
 	const start = await api.post(`/ScheduledTasks/Running/${(await task()).Id}`);
 	expect(start.ok(), `starting ${key} failed: ${start.status()}`).toBeTruthy();
@@ -193,12 +235,25 @@ export async function talkNamed(api: APIRequestContext, name: string) {
 	return talks.find((t) => t.Name === name)!;
 }
 
-export async function playbackInfo(api: APIRequestContext, itemId: string) {
+export async function playbackInfo(
+	api: APIRequestContext,
+	itemId: string,
+	deviceProfile?: { MaxStreamingBitrate: number },
+) {
 	const user = await userId(api);
 	const response = await api.post(
 		`/Items/${itemId}/PlaybackInfo?userId=${user}`,
 		{
-			data: { UserId: user, AutoOpenLiveStream: false },
+			data: {
+				UserId: user,
+				AutoOpenLiveStream: false,
+				...(deviceProfile
+					? {
+							DeviceProfile: deviceProfile,
+							MaxStreamingBitrate: deviceProfile.MaxStreamingBitrate,
+						}
+					: {}),
+			},
 		},
 	);
 	expect(response.ok()).toBeTruthy();
@@ -225,8 +280,13 @@ export async function loginUi(page: Page): Promise<void> {
 	await page.locator("#txtManualPassword").fill(ADMIN.password);
 
 	const [response] = await Promise.all([
-		page.waitForResponse((r) => /authenticatebyname/i.test(r.url()), { timeout: 30_000 }),
-		page.locator("form").first().evaluate((form: HTMLFormElement) => form.requestSubmit()),
+		page.waitForResponse((r) => /authenticatebyname/i.test(r.url()), {
+			timeout: 30_000,
+		}),
+		page
+			.locator("form")
+			.first()
+			.evaluate((form: HTMLFormElement) => form.requestSubmit()),
 	]);
 	expect(response.status(), "login failed").toBe(200);
 
@@ -238,11 +298,18 @@ export async function loginUi(page: Page): Promise<void> {
  * are on the page. The view renders them after the route itself, and a hash
  * route occasionally leaves the list empty, so the navigation is retried.
  */
-export async function gotoList(page: Page, parentId: string, server: string): Promise<void> {
+export async function gotoList(
+	page: Page,
+	parentId: string,
+	server: string,
+): Promise<void> {
 	const cards = page.locator(".card, .listItem");
 
 	for (let attempt = 0; attempt < 3; attempt++) {
-		await gotoAuthenticated(page, `/web/#/list?parentId=${parentId}&serverId=${server}`);
+		await gotoAuthenticated(
+			page,
+			`/web/#/list?parentId=${parentId}&serverId=${server}`,
+		);
 		try {
 			await expect(cards.first()).toBeVisible({ timeout: 20_000 });
 			return;
@@ -259,7 +326,10 @@ export async function gotoList(page: Page, parentId: string, server: string): Pr
  * back to the login route while it is still connecting, so the navigation is
  * retried until the login form is gone.
  */
-export async function gotoAuthenticated(page: Page, route: string): Promise<void> {
+export async function gotoAuthenticated(
+	page: Page,
+	route: string,
+): Promise<void> {
 	for (let attempt = 0; attempt < 5; attempt++) {
 		await page.goto(route);
 		await page.waitForTimeout(1500);
@@ -272,5 +342,7 @@ export async function gotoAuthenticated(page: Page, route: string): Promise<void
 		}
 	}
 
-	throw new Error(`web client kept redirecting to the login page instead of ${route}`);
+	throw new Error(
+		`web client kept redirecting to the login page instead of ${route}`,
+	);
 }

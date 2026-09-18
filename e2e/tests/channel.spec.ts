@@ -39,6 +39,7 @@ test.describe("browsing the channel", () => {
 		// Jellyfin applies its own sort order to channel items.
 		const talks = await channelItems(api, conferences[0].Id);
 		expect(talks.map((t) => t.Name).sort()).toEqual([
+			"Long talk",
 			"Three stream talk",
 			"Two stream talk",
 		]);
@@ -73,7 +74,7 @@ test.describe("browsing the channel", () => {
 		expect(details.Genres).not.toContain("Stage HUFF");
 	});
 
-	test("popular talks are ordered by view count", async () => {
+	test("popular offers the talks of the recent conferences", async () => {
 		const api = await apiContext();
 
 		const popular = (await channelItems(api)).find((i) =>
@@ -81,7 +82,11 @@ test.describe("browsing the channel", () => {
 		)!;
 		const talks = await channelItems(api, popular.Id);
 
-		expect(talks.map((t) => t.Name)).toEqual([
+		// Jellyfin re-sorts channel items by name before handing them out, so the
+		// view-count ranking the plugin applies is not observable here; it is
+		// asserted in ChaosflixChannelTests instead.
+		expect(talks.map((t) => t.Name).sort()).toEqual([
+			"Long talk",
 			"Three stream talk",
 			"Two stream talk",
 		]);
@@ -95,7 +100,8 @@ test.describe("browsing the channel", () => {
 		)!;
 		const talks = await channelItems(api, recommended.Id);
 
-		// Both clear the >100 view threshold; the ranking favours views over age.
+		// Only these two clear the >100 view threshold; the ranking favours views
+		// over age.
 		expect(talks.map((t) => t.Name)).toEqual([
 			"Three stream talk",
 			"Two stream talk",
@@ -116,16 +122,21 @@ test.describe("browsing the channel", () => {
 		}
 		await runScheduledTask(api, "RefreshInternetChannels");
 
-		for (const folder of [
-			conference,
-			folders.find((i) => i.Name.includes("Popular"))!,
-			folders.find((i) => i.Name.includes("Recommended"))!,
-		]) {
+		const everything = ["Long talk", "Three stream talk", "Two stream talk"];
+		for (const [folder, expected] of [
+			[conference, everything],
+			[folders.find((i) => i.Name.includes("Popular"))!, everything],
+			// The long talk stays below the Recommended view threshold.
+			[
+				folders.find((i) => i.Name.includes("Recommended"))!,
+				["Three stream talk", "Two stream talk"],
+			],
+		] as const) {
 			const talks = await channelItems(api, folder.Id);
 			expect(
 				talks.map((t) => t.Name).sort(),
 				`${folder.Name} lost its talks`,
-			).toEqual(["Three stream talk", "Two stream talk"]);
+			).toEqual([...expected].sort());
 		}
 	});
 });

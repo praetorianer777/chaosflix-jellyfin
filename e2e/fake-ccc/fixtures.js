@@ -7,6 +7,11 @@
 // five seconds of material.
 const SECONDS = Number(process.env.FIXTURE_SECONDS || 5);
 
+// Jellyfin keeps a resume position only for items longer than five minutes
+// (MinResumeDurationSeconds), so the resume tests need a talk of their own that
+// clears that threshold. Must match FIXTURE_LONG_SECONDS in build-artifacts.sh.
+const LONG_SECONDS = Number(process.env.FIXTURE_LONG_SECONDS || 330);
+
 const CONFERENCE = {
 	acronym: "e2e-congress",
 	title: "E2E Congress 2025",
@@ -21,11 +26,16 @@ function recording(
 	folder,
 	mimeType,
 	file,
-	{ highQuality = true, language = "deu", width = 1920 } = {},
+	{
+		highQuality = true,
+		language = "deu",
+		width = 1920,
+		seconds = SECONDS,
+	} = {},
 ) {
 	return {
 		size: 1,
-		length: SECONDS,
+		length: seconds,
 		mime_type: mimeType,
 		language,
 		filename: file,
@@ -87,6 +97,33 @@ const EVENTS = [
 			recording("h264-hd", "video/mp4", "two-stream.mp4", { language: "eng" }),
 			recording("webm-hd", "video/webm", "two-stream.webm", {
 				language: "eng",
+			}),
+		],
+		related: [],
+	},
+	{
+		guid: "e2e-0000-0000-0000-000000000003",
+		title: "Long talk",
+		slug: "long-talk",
+		description:
+			"A talk long enough for Jellyfin to keep a resume position for it.",
+		original_language: "eng",
+		persons: ["Dave Debugger"],
+		tags: ["Science"],
+		// Below the 100 views the Recommended folder asks for, so this talk does
+		// not reshuffle the existing ordering assertions.
+		view_count: 42,
+		date: "2025-12-29T09:00:00Z",
+		release_date: "2025-12-29T18:00:00Z",
+		duration: LONG_SECONDS,
+		thumb_url: "http://fake-ccc:3000/static/thumb.png",
+		conference_title: CONFERENCE.title,
+		// MP4 only: a WebM of this length costs far more to encode than the
+		// resume tests get out of it, and they never decode the video.
+		recordings: [
+			recording("h264-hd", "video/mp4", "long-talk.mp4", {
+				language: "eng",
+				seconds: LONG_SECONDS,
 			}),
 		],
 		related: [],
