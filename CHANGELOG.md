@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-18
+
+### Bug fixes
+
+- hand out the item id as the media source id (#63) (94ae7f0)
+- end a proxied stream quietly when the client hangs up (#59) (5c68ef3)
+
+### Other
+
+- run the real cast receiver in a browser (#61) (0b6dc5c)
+- cover the call the cast receiver makes without a user id (#60) (3ee8b6b)
+- prove a talk resumes across two clients (#57) (856b9b8)
+- fetch the stream a Chromecast is handed (#56) (123bf53)
+- install the published plugin into the latest Jellyfin (#52) (36923b6)
+
 ## [0.1.0] - 2026-09-18
 
 ### Features
