@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg",
     "versions": [
       {
+        "version": "0.1.0.0",
+        "changelog": "Features:\n- infer the next release version from the commits\n- generate release notes from the commit history\nBug fixes:\n- let the release workflow own the artifact and checksum (#50)\n- start the e2e stack from a clean state\n- judge -C into a nested worktree by that worktree\n- annotate the release tag with the generated notes\n- and 13 more\nPlus 8 other changes.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.1.0/chaosflix-jellyfin-v0.1.0.zip",
+        "checksum": "",
+        "timestamp": "2026-09-18T12:40:08Z"
+      },
+      {
         "version": "0.0.29.0",
         "changelog": "Release v0.0.29",
         "targetAbi": "10.11.0.0",
