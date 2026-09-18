@@ -261,6 +261,59 @@ export async function playbackInfo(
 	return { ...body.MediaSources[0], PlaySessionId: body.PlaySessionId };
 }
 
+/**
+ * A plain movie library over the fixture videos the compose file mounts at
+ * /media, so a test can compare a channel item with an ordinary library item on
+ * the same server. Returns the first movie once the scan has produced one.
+ */
+export async function movieFromFile(api: APIRequestContext, file: string) {
+	const folders = await (await api.get("/Library/VirtualFolders")).json();
+
+	if (!folders.some((f: { Name: string }) => f.Name === MOVIE_LIBRARY)) {
+		const created = await api.post(
+			`/Library/VirtualFolders?name=${encodeURIComponent(MOVIE_LIBRARY)}` +
+				"&collectionType=movies&paths=/media&refreshLibrary=true",
+			{
+				// Without this the scan asks TheMovieDb what these test patterns
+				// are and renames them to whatever it matched, which makes the
+				// items unfindable and the test dependent on the network.
+				data: {
+					LibraryOptions: {
+						EnableInternetProviders: false,
+						PathInfos: [{ Path: "/media" }],
+					},
+				},
+			},
+		);
+		expect(
+			created.ok(),
+			`creating the movie library failed: ${created.status()} ${await created.text()}`,
+		).toBeTruthy();
+	}
+
+	const user = await userId(api);
+	// By path, not by name: the scan renames items from whatever metadata it
+	// matched, and it does so after the item first appears.
+	const movie = async () =>
+		(
+			(
+				await (
+					await api.get(
+						`/Items?userId=${user}&includeItemTypes=Movie&recursive=true&fields=Path`,
+					)
+				).json()
+			).Items as Array<{ Id: string; Name: string; Type: string; Path: string }>
+		).find((item) => item.Path?.endsWith(file));
+
+	await expect
+		.poll(async () => !!(await movie()), { timeout: 120_000 })
+		.toBeTruthy();
+
+	return (await movie())!;
+}
+
+export const MOVIE_LIBRARY = "E2E Movies";
+
 export async function userId(api: APIRequestContext): Promise<string> {
 	const me = await (await api.get("/Users/Me")).json();
 	return me.Id as string;
