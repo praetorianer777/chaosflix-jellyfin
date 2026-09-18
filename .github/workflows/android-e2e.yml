@@ -45,13 +45,6 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # Same as in ci.yml: the runner has no ffmpeg, and the fallback in
-      # build-artifacts.sh looks for it in an image that hides it from PATH.
-      - name: Install ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
-
       - name: Start the Jellyfin stack
         env:
           JELLYFIN_PORT: "8098"

@@ -71,16 +71,11 @@ jobs:
             npx playwright install --with-deps chromium
           fi
 
-      # The fixture videos need ffmpeg, which the runner image does not ship.
-      # build-artifacts.sh would fall back to the jellyfin image, but that one
-      # keeps ffmpeg outside PATH, so the fallback cannot start.
-      - name: Install ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
-
       # Shell tests, Release build, xUnit suite and the Playwright e2e stack.
       # ANDROID_E2E stays unset: that suite is nightly (android-e2e.yml).
+      # ffmpeg is deliberately not installed: the runner has none, so the
+      # fixtures are built through build-artifacts.sh's container fallback,
+      # which stayed broken for as long as nothing exercised it.
       - name: Run the test suite
         run: ./run-tests.sh
 
