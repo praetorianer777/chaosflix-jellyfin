@@ -14,6 +14,7 @@ public sealed partial class FakeCdn : IDisposable
     private readonly Dictionary<string, byte[]> _files = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _redirects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _contentTypes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _statuses = new(StringComparer.Ordinal);
 
     public FakeCdn()
     {
@@ -33,11 +34,20 @@ public sealed partial class FakeCdn : IDisposable
     public string AddFile(string path, byte[] content, string? contentType = "video/mp4")
     {
         _files[path] = content;
+        _statuses.Remove(path);
         if (contentType != null)
         {
             _contentTypes[path] = contentType;
         }
 
+        return BaseUrl + path;
+    }
+
+    /// <summary>Serves an error status for <paramref name="path"/>, like a mirror that lost the file.</summary>
+    public string AddStatus(string path, int statusCode)
+    {
+        _files.Remove(path);
+        _statuses[path] = statusCode;
         return BaseUrl + path;
     }
 
@@ -99,6 +109,12 @@ public sealed partial class FakeCdn : IDisposable
         }
 
         using var response = ctx.Response;
+
+        if (_statuses.TryGetValue(path, out var status))
+        {
+            response.StatusCode = status;
+            return;
+        }
 
         if (_redirects.TryGetValue(path, out var location))
         {

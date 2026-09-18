@@ -13,15 +13,25 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
 
     private readonly FakeCccApi _api = new();
     private readonly FakeCdn _cdn = new();
+    private readonly CccApiClient _apiClient;
     private readonly ChaosflixStreamController _controller;
 
     public ChaosflixStreamControllerTests()
     {
-        _controller = new ChaosflixStreamController(_api.CreateApiClient(), NullLogger<ChaosflixStreamController>.Instance)
+        _apiClient = _api.CreateApiClient();
+        _controller = NewController();
+    }
+
+    // Every request gets its own controller, but they share the api client so that
+    // its redirect cache survives across requests the way it does on a live server.
+    private ChaosflixStreamController NewController()
+    {
+        var controller = new ChaosflixStreamController(_apiClient, NullLogger<ChaosflixStreamController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
-        _controller.Response.Body = new MemoryStream();
+        controller.Response.Body = new MemoryStream();
+        return controller;
     }
 
     public void Dispose() => _cdn.Dispose();
@@ -147,7 +157,7 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
         Assert.Equal(404, _controller.Response.StatusCode);
     }
 
-    [Fact(Skip = "Known bug #5: the CCC API 404 surfaces as HttpRequestException (HTTP 500)")]
+    [Fact]
     public async Task UnknownEventIs404()
     {
         await Proxy("does-not-exist");
@@ -155,7 +165,7 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
         Assert.Equal(404, _controller.Response.StatusCode);
     }
 
-    [Fact(Skip = "Known bug #5: RangeHeaderValue.Parse throws on malformed Range headers")]
+    [Fact]
     public async Task MalformedRangeDoesNotThrow()
     {
         _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
@@ -164,6 +174,71 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
         await Proxy("e1");
 
         Assert.NotEqual(500, _controller.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeadMirrorIsDroppedSoTheNextPlaybackSucceeds()
+    {
+        string deadMirror;
+        using (var goneMirror = new FakeCdn())
+        {
+            deadMirror = goneMirror.BaseUrl + "/mirror-a/hd.mp4";
+        }
+
+        var cdnUrl = _cdn.AddRedirect("/cdn/hd.mp4", deadMirror);
+        _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: cdnUrl)]));
+
+        await Proxy("e1");
+
+        Assert.Equal(502, _controller.Response.StatusCode);
+
+        _cdn.AddRedirect("/cdn/hd.mp4", _cdn.AddFile("/mirror-b/hd.mp4", Video));
+        var second = NewController();
+
+        await second.ProxyStream("e1", null, null);
+
+        Assert.Equal(200, second.Response.StatusCode);
+        Assert.Equal(Video, ((MemoryStream)second.Response.Body).ToArray());
+    }
+
+    [Fact]
+    public async Task MirrorErrorIsRetriedThroughTheCdn()
+    {
+        var mirror = _cdn.AddStatus("/mirror-a/hd.mp4", 503);
+        var cdnUrl = _cdn.AddRedirect("/cdn/hd.mp4", mirror);
+        _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: cdnUrl)]));
+
+        await Proxy("e1");
+
+        Assert.Contains(_cdn.Requests, r => r is { Method: "GET", Path: "/cdn/hd.mp4" });
+        Assert.Equal(503, _controller.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpstreamErrorIsNotDressedUpAsMedia()
+    {
+        _api.Json("/public/events/e1", Event("e1", recordings:
+            [Recording("h264-hd", url: _cdn.AddStatus("/hd.mp4", 500))]));
+
+        await Proxy("e1");
+
+        Assert.Equal(500, _controller.Response.StatusCode);
+        Assert.Empty(_controller.Response.Headers.AcceptRanges.ToString());
+        Assert.Null(_controller.Response.ContentType);
+        Assert.Empty(Body());
+    }
+
+    [Fact]
+    public async Task AbortedRequestStopsBeforeTheCdnIsAsked()
+    {
+        _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
+        using var aborted = new CancellationTokenSource();
+        aborted.Cancel();
+        _controller.ControllerContext.HttpContext.RequestAborted = aborted.Token;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Proxy("e1"));
+
+        Assert.Empty(_cdn.Requests);
     }
 
     private Task Proxy(string guid, string? folder = null, string? language = null) =>

@@ -45,6 +45,11 @@ public class MemoryCache
     }
 
     /// <summary>
+    /// Invalidates a single cached entry.
+    /// </summary>
+    public void Remove(string key) => _cache.TryRemove(key, out _);
+
+    /// <summary>
     /// Invalidates all cached entries.
     /// </summary>
     public void Clear() => _cache.Clear();
