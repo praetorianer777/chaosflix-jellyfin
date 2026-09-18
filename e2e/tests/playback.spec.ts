@@ -45,6 +45,24 @@ test.describe("playback", () => {
 		expect((await partial.body()).length).toBe(100);
 	});
 
+	test("the proxy refuses a url it did not sign", async () => {
+		const api = await apiContext();
+		const talk = await talkNamed(api, "Three stream talk");
+		const source = await playbackInfo(api, talk.Id);
+		const url = new URL(source.Path);
+
+		// Same recording, signature removed: the endpoint is reachable without
+		// a Jellyfin session, so the signature is what stops it being an open
+		// relay for CCC downloads (#2).
+		url.searchParams.delete("t");
+		const unsigned = await api.get(url.pathname + url.search);
+		expect(unsigned.status()).toBe(401);
+
+		url.searchParams.set("t", "0".repeat(64));
+		const forged = await api.get(url.pathname + url.search);
+		expect(forged.status()).toBe(401);
+	});
+
 	test("playback is recorded in the watch history", async () => {
 		const api = await apiContext();
 		const user = await userId(api);
