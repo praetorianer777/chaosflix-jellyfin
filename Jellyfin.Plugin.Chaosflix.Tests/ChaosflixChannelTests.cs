@@ -22,6 +22,7 @@ public class ChaosflixChannelTests
 {
     private readonly FakeCccApi _api = new();
     private readonly IMediaEncoder _encoder = Substitute.For<IMediaEncoder>();
+    private readonly FakeTime _time = new();
     private readonly ChaosflixChannel _channel;
 
     public ChaosflixChannelTests()
@@ -34,7 +35,7 @@ public class ChaosflixChannelTests
         _encoder.GetMediaInfo(Arg.Any<MediaInfoRequest>(), Arg.Any<CancellationToken>())
             .Returns(new MediaInfo { MediaStreams = Streams(MediaStreamType.Video, MediaStreamType.Audio) });
 
-        _channel = new ChaosflixChannel(_api.CreateApiClient(), NullLogger<ChaosflixChannel>.Instance, host, _encoder);
+        _channel = new ChaosflixChannel(_api.CreateApiClient(), NullLogger<ChaosflixChannel>.Instance, host, _encoder, _time);
     }
 
     [Fact]
@@ -407,7 +408,7 @@ public class ChaosflixChannelTests
         await _encoder.Received(2).GetMediaInfo(Arg.Any<MediaInfoRequest>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact(Skip = "Known bug #3: probe cache is keyed by event, not by the selected recording")]
+    [Fact]
     public async Task ChangingPreferredFormatProbesTheNewRecording()
     {
         EventWithRecordings("e1", Recording("h264-hd"), Recording("webm-hd", "video/webm"));
@@ -479,6 +480,47 @@ public class ChaosflixChannelTests
         await Sources("event:popular:e1");
 
         await _encoder.Received(1).GetMediaInfo(Arg.Any<MediaInfoRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProbeIsRepeatedOnceTheCachedEntryHasExpired()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"));
+
+        await Sources("event:e1");
+        _time.Advance(ChaosflixChannel.ProbeCacheTtl + TimeSpan.FromMinutes(1));
+        await Sources("event:e1");
+
+        await _encoder.Received(2).GetMediaInfo(Arg.Any<MediaInfoRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProbeCacheDropsTheOldestEntryOnceItIsFull()
+    {
+        for (var i = 0; i <= ChaosflixChannel.ProbeCacheCapacity; i++)
+        {
+            EventWithRecordings($"e{i}", Recording("h264-hd"));
+            await Sources($"event:e{i}");
+            _time.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        await Sources("event:e0");
+
+        await _encoder.Received(2).GetMediaInfo(
+            Arg.Is<MediaInfoRequest>(r => r.MediaSource.Path.StartsWith("http://jellyfin:8096/api/ChaosflixStream/proxy/e0?", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+        await _encoder.Received(1).GetMediaInfo(
+            Arg.Is<MediaInfoRequest>(r => r.MediaSource.Path.StartsWith("http://jellyfin:8096/api/ChaosflixStream/proxy/e1?", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    private sealed class FakeTime : TimeProvider
+    {
+        private DateTimeOffset _now = new(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan by) => _now += by;
     }
 
     private static List<MediaStream> Streams(params MediaStreamType[] types) =>
