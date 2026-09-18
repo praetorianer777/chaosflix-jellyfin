@@ -241,6 +241,63 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
         Assert.Empty(_cdn.Requests);
     }
 
+    // Once the body is on the wire the exception middleware can no longer turn an
+    // exception into a response and only logs that the response has already started
+    // (#58) — so a client leaving mid-file has to end the request quietly.
+    [Fact]
+    public async Task ClientHangingUpMidBodyEndsTheStreamQuietly()
+    {
+        _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
+        using var aborted = new CancellationTokenSource();
+        _controller.ControllerContext.HttpContext.RequestAborted = aborted.Token;
+        _controller.Response.Body = new HangUpOnWriteStream(aborted);
+
+        await Proxy("e1");
+
+        Assert.Equal(200, _controller.Response.StatusCode);
+    }
+
+    /// <summary>Kestrel's response body once the client is gone: the request is
+    /// aborted and the write fails with that token.</summary>
+    private sealed class HangUpOnWriteStream : Stream
+    {
+        private readonly CancellationTokenSource _aborted;
+
+        public HangUpOnWriteStream(CancellationTokenSource aborted) => _aborted = aborted;
+
+        public override bool CanRead => false;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => true;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken)
+        {
+            _aborted.Cancel();
+            throw new OperationCanceledException(_aborted.Token);
+        }
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Flush()
+        {
+        }
+    }
+
     // The proxy only serves urls it signed itself (#2); tests go through the
     // same signature the channel puts on the media source path.
     [Fact]

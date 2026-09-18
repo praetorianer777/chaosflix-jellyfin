@@ -165,9 +165,21 @@ public class ChaosflixStreamController : ControllerBase
         // Stream body (skip for HEAD requests)
         if (HttpContext.Request.Method != "HEAD")
         {
-            await using var upstreamStream = await finalResponse.Content.ReadAsStreamAsync(cancellationToken)
-                .ConfigureAwait(false);
-            await upstreamStream.CopyToAsync(Response.Body, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await using var upstreamStream = await finalResponse.Content.ReadAsStreamAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                await upstreamStream.CopyToAsync(Response.Body, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // ffmpeg being killed at the end of a transcode, a player seeking or a
+                // browser tab closing all hang up mid-file: that is how a proxied media
+                // response normally ends. Letting it unwind would reach Jellyfin's
+                // exception middleware with the response already on the wire, which can
+                // only log a warning about it (#58).
+                _logger.LogDebug("Client aborted the stream for {EventGuid}", eventGuid);
+            }
         }
     }
 
