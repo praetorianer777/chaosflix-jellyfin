@@ -58,6 +58,31 @@ if [[ ! "${TARGET_ABI}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
+# ── 0. Level with the remote ────────────────────────────
+
+# A release built from a stale checkout tags code the remote does not have:
+# the tag pushes, the branch is rejected, and the workflow publishes the old
+# build with a manifest entry nobody can see (#64).
+UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+if [[ -n "${UPSTREAM}" ]]; then
+    git fetch --quiet "${UPSTREAM%%/*}" || echo "   ⚠️  could not reach ${UPSTREAM%%/*}, checking against the last fetch"
+    BEHIND=$(git rev-list --count "HEAD..${UPSTREAM}")
+    AHEAD=$(git rev-list --count "${UPSTREAM}..HEAD")
+    if (( BEHIND > 0 )); then
+        echo "❌ $(git rev-parse --abbrev-ref HEAD) is ${BEHIND} commit(s) behind ${UPSTREAM}."
+        echo "   Releasing now would tag code the remote does not have. Missing:"
+        git log --oneline "HEAD..${UPSTREAM}" | sed 's/^/     /'
+        echo ""
+        echo "   git fetch origin && git reset --hard ${UPSTREAM}"
+        exit 1
+    fi
+    if (( AHEAD > 0 )); then
+        echo "⚠️  $(git rev-parse --abbrev-ref HEAD) is ${AHEAD} commit(s) ahead of ${UPSTREAM}; they are released as part of this version."
+    fi
+else
+    echo "⚠️  no upstream for $(git rev-parse --abbrev-ref HEAD); cannot check whether this is what the remote has."
+fi
+
 # ── 0. The commits since the previous tag ───────────────
 
 PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
