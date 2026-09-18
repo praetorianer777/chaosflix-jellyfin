@@ -173,6 +173,15 @@ print(len(versions), versions[0]['version'],
 " "${SANDBOX}/manifest.json")
 
 check "newest entry is the released version" "${NEWEST}" "0.0.30.0"
+
+# The notes file is git-ignored, so a release built from the tag (CI) only has
+# the tag message to go on — it must carry the notes.
+TAG_CALL=$(grep -P '^tag\t' "${VCS_LOG}" | head -1)
+if [[ "${TAG_CALL}" == *"-a"* && "${TAG_CALL}" == *"-F"* && "${TAG_CALL}" == *"release-notes-v0.0.30.md"* ]]; then
+    pass "the tag is annotated with the generated notes"
+else
+    fail "the tag is annotated with the generated notes: got [${TAG_CALL}]"
+fi
 check "previous entry of the same targetAbi is kept" "${HAS_29}" "True"
 check "newest entry of an older targetAbi is kept" "${HAS_20}" "True"
 check "entries beyond the retention window are dropped" "${HAS_25}" "False"
