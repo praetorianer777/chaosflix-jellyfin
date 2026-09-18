@@ -38,6 +38,23 @@ deny() { decide deny "$1"; }
 ask() { decide ask "$1"; }
 
 valid() { [[ "$1" =~ $BRANCH_RE ]]; }
+
+# True for `git merge --ff-only <upstream>` / `git reset --hard <upstream>` where
+# <upstream> is exactly the tracking branch of the checked-out branch.
+syncs_with_upstream() {
+  local repo="$1" branch="$2"; shift 2
+  local upstream target="" mode=0
+  upstream="$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name "$branch@{upstream}" 2>/dev/null)" || return 1
+  [[ -n "$upstream" ]] || return 1
+  for a in "$@"; do
+    case "$a" in
+      --ff-only|--hard) mode=1 ;;
+      -*) return 1 ;;
+      *) [[ -n "$target" ]] && return 1; target="$a" ;;
+    esac
+  done
+  (( mode )) && [[ "$target" == "$upstream" ]]
+}
 is_branch() { git -C "$repo" show-ref --verify --quiet "refs/heads/$1"; }
 
 # Each checkout gets its own stack, so gates running in parallel worktrees do
@@ -144,6 +161,13 @@ case "$tool" in
           fi
           ;;
         add|mv|rm|restore|apply|commit|merge|rebase|cherry-pick|revert|reset|am)
+          # Catching up with the remote is not working on main: refusing it is
+          # what left main behind after every merged PR, until a release was cut
+          # from stale code (#64). Only a move onto the branch's own upstream is
+          # allowed, and only as a fast-forward or a reset to exactly that ref.
+          if [[ "$sub" == merge || "$sub" == reset ]] && syncs_with_upstream "$repo" "$branch" "${args[@]}"; then
+            continue
+          fi
           valid "$branch" || deny "Refusing 'git $sub' on branch '$branch'. $HINT"
           ;;
         push)
