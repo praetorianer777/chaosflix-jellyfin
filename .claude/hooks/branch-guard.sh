@@ -111,9 +111,11 @@ case "$tool" in
         [[ "${t[i]}" == -C || "${t[i]}" == -c ]] && ((i++))
         ((i++))
       done
-      # -C into another checkout is judged by that checkout's branch.
-      if [[ "$target" != "$repo" && "$target" != "$repo"/* ]]; then
-        target_repo="$(checkout_for "$target")" || continue
+      # -C into another checkout is judged by that checkout's branch. Worktrees
+      # live under .claude/worktrees inside the repo directory, so the path
+      # alone does not say which checkout it belongs to — ask git.
+      target_repo="$(checkout_for "$target")" || continue
+      if [[ "$target_repo" != "$repo" ]]; then
         repo="$target_repo"
         branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached HEAD)')"
       fi

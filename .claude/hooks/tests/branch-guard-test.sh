@@ -114,6 +114,13 @@ echo "== worktree switched to main"
 git -C "$WT" switch -q main 2>/dev/null || git -C "$WT" checkout -q --detach
 check deny Bash "$G $C -m x" "$WT"
 
+echo "== -C into a nested worktree is judged by that worktree"
+git -C "$WT" switch -q fix/99-agent-work
+check allow Bash "$G -C $WT $C -m x" "$W2/r"
+check allow Bash "$G -C $WT add -A" "$W2/r"
+git -C "$WT" switch -q main 2>/dev/null || git -C "$WT" checkout -q --detach
+check deny  Bash "$G -C $WT $C -m x" "$W2/r"
+
 echo "== unrelated repo is none of our business"
 OTHER="$W2/other"; mkdir -p "$OTHER" && git -C "$OTHER" init -q && git -C "$OTHER" commit -q --allow-empty -m init
 check allow Write "$OTHER/file.txt" "$OTHER"
