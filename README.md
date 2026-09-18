@@ -8,7 +8,7 @@ All content is sourced from [media.ccc.de](https://media.ccc.de) via their publi
 
 ## Features
 
-- 🎬 **Stream talks directly** from the CCC CDN — no server-side downloads
+- 🎬 **Stream talks** from the CCC CDN through the server — no downloads, no local storage
 - 🔥 **Popular Talks** — most viewed talks across conferences
 - ⭐ **Recommended** — trending talks ranked by views and recency
 - 📅 **Browse by Year** — conferences grouped by year (2024 → 38C3, Camp…)
@@ -129,9 +129,8 @@ Das Script:
 Danach:
 ```bash
 git add -A && git commit -m "chore: upgrade to Jellyfin 10.12.0"
-./release.sh 0.1.0 "Upgrade to Jellyfin 10.12.0"
-git push origin main --tags
-# Upload ZIP auf GitHub Release
+./release.sh
+git push origin main --tags   # the release workflow publishes the ZIP
 ```
 
 #### Manuell
@@ -146,8 +145,8 @@ sed -i 's/Version="10.11.7"/Version="10.12.0"/g' \
 # 3. Update targetAbi in manifest.json
 sed -i 's/"targetAbi": "10.11.0.0"/"targetAbi": "10.12.0.0"/g' manifest.json
 
-# 4. Build and release
-./release.sh 0.1.0 "Upgrade to Jellyfin 10.12.0"
+# 4. Release
+./release.sh
 ```
 
 #### Was bei Major-Updates brechen kann
@@ -178,7 +177,24 @@ sed -i 's/"targetAbi": "10.11.0.0"/"targetAbi": "10.12.0.0"/g' manifest.json
 ./release.sh 0.0.2 "Rebuild for Jellyfin 10.12"
 ```
 
-This updates all version strings, builds, creates the ZIP, and commits + tags.
+This updates all version strings, writes the changelog and the release notes,
+commits and tags. It builds nothing: the release workflow builds the plugin from
+the tag, publishes the release with the ZIP attached and writes the checksum of
+exactly those bytes into `manifest.json`. A ZIP built locally would never be
+byte-identical to the published one, so its checksum described bytes nobody
+could download (#49).
+
+Releasing therefore needs no .NET SDK and no `zip` on the machine that tags:
+
+```bash
+git fetch origin && git reset --hard origin/main   # release what the remote has
+./release.sh
+git push origin main --tags                        # the tag publishes the release
+```
+
+`release.sh` refuses to run when the branch is behind its upstream and names the
+missing commits, because a release cut from a stale checkout publishes code the
+remote does not have (#64).
 
 Without a version argument the next number is derived from the Conventional
 Commit subjects since the previous tag, and the reasoning is printed before
@@ -198,8 +214,56 @@ Conventional Commit subjects since the previous tag, grouped into breaking
 changes, features, bug fixes and other changes. They go into three places: a new
 section on top of `CHANGELOG.md`, a short list in `manifest.json` (that is what
 Jellyfin's plugin catalogue shows), and `release-notes-v<version>.md`, which the
-script prints together with a ready-to-run `gh release create` command. The
-script itself never pushes and never publishes a release (see #19).
+script prints. The script itself never pushes; pushing the tag is what publishes
+the release.
+
+## Testing
+
+One entry point runs everything that gates a push:
+
+```bash
+./run-tests.sh
+```
+
+That is the shell tests, a Release build, the unit tests (`*.Tests.csproj`) and
+the Playwright suite in `e2e/`, which starts a real Jellyfin in Docker against a
+fake `media.ccc.de`. The branch guard runs it on every `git push`.
+
+Four suites stay out of it because they need an emulator, a network clone or a
+published release, and are opt-in:
+
+| Suite | How | What it covers |
+|---|---|---|
+| Android phone app | `ANDROID_E2E=1 ./run-tests.sh` | real ExoPlayer on an emulator ([`e2e/android`](e2e/android)) |
+| Cast receiver | `RECEIVER_E2E=1 ./run-tests.sh` | the real jellyfin-chromecast bundle in a browser |
+| Android TV | `e2e/android/tv-repro.sh` | jellyfin-androidtv on a TV emulator, driven by hand |
+| Published plugin | `e2e/install/install-from-manifest.sh` | a fresh Jellyfin installing the **released** plugin from `manifest.json`, checksum included |
+
+The e2e stack is configurable: `JELLYFIN_TAG` (`latest` is 12.1), `JELLYFIN_PORT`,
+`COMPOSE_PROJECT_NAME` and `E2E_FIXTURE_SECONDS`.
+
+## Continuous Integration
+
+| Workflow | When | What |
+|---|---|---|
+| `ci.yml` | every PR and push to `main` | `./run-tests.sh` on a GitHub-hosted runner |
+| `release.yml` | a `v*` tag | build, publish the release with its ZIP, commit the checksum |
+| `android-e2e.yml` | nightly, or on demand | the Android emulator suite |
+| `install-e2e.yml` | after a release, and nightly | install the published plugin into the newest Jellyfin |
+
+The runner deliberately has no `ffmpeg`, so the fixture build exercises its
+container fallback — that path was broken for as long as nothing ran it.
+
+## Known Limitations
+
+- Jellyfin stores a channel item under exactly one parent, so a talk listed in
+  several folders needs one id per folder and becomes several library items.
+  Watch state is mirrored between them, but the copies show up as duplicates in
+  "Recently added" ([#54](https://github.com/praetorianer777/chaosflix-jellyfin/issues/54)).
+- Playback runs through `/api/ChaosflixStream/proxy` with a signed url rather
+  than straight from the CDN: ExoPlayer cannot follow the CDN's cross-domain
+  redirects, so mirror failover, range requests and redirects are resolved
+  server-side. The signature is per server process.
 
 ## How It Works
 
