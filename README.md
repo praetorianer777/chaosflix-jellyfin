@@ -163,9 +163,13 @@ sed -i 's/"targetAbi": "10.11.0.0"/"targetAbi": "10.12.0.0"/g' manifest.json
 ### Creating a Release (automated)
 
 ```bash
-./release.sh <version>
+# The version is worked out from the commits since the last tag:
+./release.sh
 
-# Example:
+# Look first — prints the version and the notes, writes nothing:
+./release.sh --dry-run
+
+# A version given by hand always wins:
 ./release.sh 0.0.2
 
 # The changelog can still be written by hand; it then overrides the generated one:
@@ -173,6 +177,19 @@ sed -i 's/"targetAbi": "10.11.0.0"/"targetAbi": "10.12.0.0"/g' manifest.json
 ```
 
 This updates all version strings, builds, creates the ZIP, and commits + tags.
+
+Without a version argument the next number is derived from the Conventional
+Commit subjects since the previous tag, and the reasoning is printed before
+anything is written:
+
+| Since the last tag | Bump |
+|--------------------|------|
+| `feat!:` or a `BREAKING CHANGE:` trailer | MINOR while below 1.0.0 (a 0.x MAJOR bump would declare 1.0), MAJOR from 1.0.0 on |
+| a `feat:` | MINOR |
+| a raised `targetAbi` in `meta.json` | MINOR — it changes which servers may install the plugin |
+| a `fix:` | PATCH |
+| only `chore`/`docs`/`test`/`build`/`ci`/`refactor` | PATCH, and the output says so |
+| nothing | the script aborts and changes nothing |
 
 Without a changelog argument the release notes are generated from the
 Conventional Commit subjects since the previous tag, grouped into breaking
