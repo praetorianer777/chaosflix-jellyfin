@@ -19,3 +19,6 @@ e2e/playwright-report/
 
 # android e2e
 e2e/android/.artifacts/
+
+# release notes
+release-notes-*.md

@@ -10,6 +10,7 @@ REPO_NAME="chaosflix-jellyfin"
 PROPS="Directory.Build.props"
 META="Jellyfin.Plugin.Chaosflix/meta.json"
 MANIFEST="manifest.json"
+CHANGELOG_FILE="CHANGELOG.md"
 
 # manifest.json retention: the newest entry of every distinct targetAbi is kept
 # so servers on an older Jellyfin are still offered a version they can load; of
@@ -32,7 +33,7 @@ fi
 # three-part form the published releases already use.
 VERSION_THREE=$(cut -d. -f1-3 <<< "${VERSION}")
 VERSION_FOUR="${VERSION_THREE}.$(cut -d. -f4 <<< "${VERSION}.0")"
-CHANGELOG="${2:-Release v${VERSION_THREE}}"
+MANUAL_CHANGELOG="${2:-}"
 TAG="v${VERSION_THREE}"
 ZIP_NAME="chaosflix-jellyfin-${TAG}.zip"
 SOURCE_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${TAG}/${ZIP_NAME}"
@@ -50,11 +51,168 @@ if [[ ! "${TARGET_ABI}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
+# ── 0. Release notes ────────────────────────────────────
+
+# The notes are derived from the commits since the previous tag (see #19); a
+# changelog passed as the second argument still overrides the generated one.
+NOTES_FILE="release-notes-${TAG}.md"
+RAW_LOG=""
+if [[ -z "${MANUAL_CHANGELOG}" ]]; then
+    PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+    RANGE="HEAD"
+    [[ -n "${PREV_TAG}" ]] && RANGE="${PREV_TAG}..HEAD"
+    # \x1f separates the fields of a commit, \x1e the commits: neither can
+    # occur in a subject or body, unlike any printable delimiter.
+    RAW_LOG=$(git log --no-merges --format="%H%x1f%s%x1f%b%x1e" "${RANGE}" 2>/dev/null || true)
+fi
+
+# Same reason as below: everything reaches Python through the environment.
+CHANGELOG=$(
+    VERSION_THREE="${VERSION_THREE}" \
+    RAW_LOG="${RAW_LOG}" \
+    MANUAL_CHANGELOG="${MANUAL_CHANGELOG}" \
+    RELEASE_DATE="$(date -u +%Y-%m-%d)" \
+    NOTES_FILE="${NOTES_FILE}" \
+    CHANGELOG_FILE="${CHANGELOG_FILE}" \
+    python3 - <<'PY'
+import os
+import re
+
+version = os.environ['VERSION_THREE']
+release_date = os.environ['RELEASE_DATE']
+manual = os.environ.get('MANUAL_CHANGELOG', '')
+raw = os.environ.get('RAW_LOG', '')
+notes_path = os.environ['NOTES_FILE']
+changelog_path = os.environ['CHANGELOG_FILE']
+
+BREAKING, FEATURES, FIXES, OTHER = (
+    'Breaking changes', 'Features', 'Bug fixes', 'Other')
+HEADER = re.compile(
+    r'^(?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s+(?P<desc>.+)$')
+TRAILER = re.compile(r'^BREAKING[ -]CHANGE:\s*(?P<desc>.*)$')
+
+KEEP_A_CHANGELOG_HEADER = """# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+"""
+
+
+def collect(log):
+    sections = {BREAKING: [], FEATURES: [], FIXES: [], OTHER: []}
+    for record in log.split('\x1e'):
+        if not record.strip():
+            continue
+        fields = record.strip('\n').split('\x1f')
+        sha, subject = fields[0], fields[1] if len(fields) > 1 else ''
+        body = fields[2] if len(fields) > 2 else ''
+        match = HEADER.match(subject)
+        ctype = match.group('type').lower() if match else ''
+        if ctype == 'release':
+            continue
+        if match:
+            text = match.group('desc')
+            if match.group('scope'):
+                text = '%s: %s' % (match.group('scope'), text)
+        else:
+            # Not a Conventional Commit — kept verbatim rather than dropped.
+            text = subject
+        trailer = None
+        for line in body.splitlines():
+            found = TRAILER.match(line.strip())
+            if found:
+                trailer = found.group('desc').strip() or text
+                break
+        if (match and match.group('bang')) or trailer:
+            sections[BREAKING].append((trailer or text, sha[:7]))
+        elif ctype == 'feat':
+            sections[FEATURES].append((text, sha[:7]))
+        elif ctype == 'fix':
+            sections[FIXES].append((text, sha[:7]))
+        else:
+            sections[OTHER].append((text, sha[:7]))
+    return sections
+
+
+def markdown(sections):
+    out = []
+    for title in (BREAKING, FEATURES, FIXES, OTHER):
+        if not sections[title]:
+            continue
+        out.append('### %s' % title)
+        out.append('')
+        out += ['- %s (%s)' % item for item in sections[title]]
+        out.append('')
+    if not out:
+        return '- No changes recorded since the previous release.'
+    return '\n'.join(out).strip()
+
+
+def compact(sections, limit=4):
+    """Short form for manifest.json — rendered inside Jellyfin's catalogue."""
+    parts = []
+    notable = any(sections[t] for t in (BREAKING, FEATURES, FIXES))
+    for title in (BREAKING, FEATURES, FIXES, OTHER):
+        items = sections[title]
+        if not items:
+            continue
+        if title == OTHER and notable:
+            parts.append('Plus %d other change%s.'
+                         % (len(items), '' if len(items) == 1 else 's'))
+            continue
+        lines = ['%s:' % title]
+        lines += ['- %s' % text for text, _ in items[:limit]]
+        if len(items) > limit:
+            lines.append('- and %d more' % (len(items) - limit))
+        parts.append('\n'.join(lines))
+    return '\n'.join(parts)
+
+
+if manual:
+    body = manual.strip()
+    short = manual
+else:
+    sections = collect(raw)
+    body = markdown(sections)
+    short = compact(sections) or 'Release v%s' % version
+
+with open(notes_path, 'w') as f:
+    f.write(body.rstrip('\n') + '\n')
+
+section = '## [%s] - %s\n\n%s' % (version, release_date, body.rstrip('\n'))
+if os.path.exists(changelog_path):
+    with open(changelog_path) as f:
+        lines = f.read().split('\n')
+    # Newest on top: the new section goes directly above the previous one,
+    # so the Keep a Changelog preamble stays where it is.
+    first = next((i for i, line in enumerate(lines) if line.startswith('## ')),
+                 len(lines))
+    head = '\n'.join(lines[:first]).strip('\n')
+    tail = '\n'.join(lines[first:]).strip('\n')
+    document = '\n\n'.join(part for part in (head, section, tail) if part)
+else:
+    document = KEEP_A_CHANGELOG_HEADER + '\n' + section
+
+with open(changelog_path, 'w') as f:
+    f.write(document.rstrip('\n') + '\n')
+
+print(short, end='')
+PY
+)
+
 echo "📦 Releasing Chaosflix ${TAG}"
 echo "   Version:   ${VERSION_FOUR}"
 echo "   targetAbi: ${TARGET_ABI}"
-echo "   Changelog: ${CHANGELOG}"
 echo "   ZIP:       ${ZIP_NAME}"
+if [[ -n "${MANUAL_CHANGELOG}" ]]; then
+    echo "   Changelog: ${CHANGELOG} (given on the command line)"
+else
+    echo "   Changelog: generated from the commits since ${PREV_TAG:-the first commit}"
+fi
+echo "   ✅ ${CHANGELOG_FILE}"
+echo "   ✅ ${NOTES_FILE}"
 echo ""
 
 # ── 1. Update versions in all files ─────────────────────
@@ -176,14 +334,23 @@ echo ""
 echo "📝 Committing..."
 # Only the files this release rewrote — "git add -A" swept whatever else was in
 # the working tree into the release commit.
-git add "${PROPS}" "${META}" "${MANIFEST}"
-git commit -m "release: ${TAG} — ${CHANGELOG}"
+git add "${PROPS}" "${META}" "${MANIFEST}" "${CHANGELOG_FILE}"
+if [[ -n "${MANUAL_CHANGELOG}" ]]; then
+    git commit -m "release: ${TAG} — ${MANUAL_CHANGELOG}"
+else
+    # Generated notes are multi-line, so they belong in the body — the subject
+    # has to stay one short line.
+    git commit -m "release: ${TAG}" -m "${CHANGELOG}"
+fi
 git tag "${TAG}"
 
+echo ""
+echo "📰 Release notes (${NOTES_FILE}):"
+echo ""
+sed 's/^/   /' "${NOTES_FILE}"
 echo ""
 echo "🎉 Done! Next steps:"
 echo ""
 echo "   git push origin main --tags"
-echo "   # Then on GitHub: Releases → Create release from tag ${TAG}"
-echo "   # Upload: ${ZIP_NAME}"
+echo "   gh release create ${TAG} ${ZIP_NAME} --title ${TAG} --notes-file ${NOTES_FILE}"
 echo ""

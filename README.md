@@ -163,13 +163,24 @@ sed -i 's/"targetAbi": "10.11.0.0"/"targetAbi": "10.12.0.0"/g' manifest.json
 ### Creating a Release (automated)
 
 ```bash
-./release.sh <version> "<changelog>"
+./release.sh <version>
 
 # Example:
+./release.sh 0.0.2
+
+# The changelog can still be written by hand; it then overrides the generated one:
 ./release.sh 0.0.2 "Rebuild for Jellyfin 10.12"
 ```
 
 This updates all version strings, builds, creates the ZIP, and commits + tags.
+
+Without a changelog argument the release notes are generated from the
+Conventional Commit subjects since the previous tag, grouped into breaking
+changes, features, bug fixes and other changes. They go into three places: a new
+section on top of `CHANGELOG.md`, a short list in `manifest.json` (that is what
+Jellyfin's plugin catalogue shows), and `release-notes-v<version>.md`, which the
+script prints together with a ready-to-run `gh release create` command. The
+script itself never pushes and never publishes a release (see #19).
 
 ## How It Works
 
