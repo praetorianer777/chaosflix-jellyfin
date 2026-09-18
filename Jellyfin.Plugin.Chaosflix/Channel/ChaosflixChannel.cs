@@ -40,21 +40,32 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private const string ScopePopular = "popular";
     private const string ScopeRecommended = "recommended";
 
+    internal const int ProbeCacheCapacity = 128;
+
+    internal static readonly TimeSpan ProbeCacheTtl = TimeSpan.FromHours(6);
+
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixChannel> _logger;
     private readonly IServerApplicationHost _appHost;
     private readonly IMediaEncoder _mediaEncoder;
-    private readonly ConcurrentDictionary<string, List<MediaStream>> _probeCache = new();
+    private readonly TimeProvider _timeProvider;
+    private readonly ConcurrentDictionary<string, ProbeCacheEntry> _probeCache = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ChaosflixChannel"/> class.
     /// </summary>
-    public ChaosflixChannel(CccApiClient apiClient, ILogger<ChaosflixChannel> logger, IServerApplicationHost appHost, IMediaEncoder mediaEncoder)
+    public ChaosflixChannel(
+        CccApiClient apiClient,
+        ILogger<ChaosflixChannel> logger,
+        IServerApplicationHost appHost,
+        IMediaEncoder mediaEncoder,
+        TimeProvider? timeProvider = null)
     {
         _apiClient = apiClient;
         _logger = logger;
         _appHost = appHost;
         _mediaEncoder = mediaEncoder;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <inheritdoc />
@@ -546,7 +557,12 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         // CCC MP4s vary: some have 2 streams (video+audio), some have 3
         // (video+video[visual impaired]+audio). We must declare the correct
         // indices so the server generates proper ffmpeg -map flags.
-        var mediaStreams = await ProbeMediaStreamsAsync(proxyUrl, eventGuid, cancellationToken).ConfigureAwait(false);
+        // Keyed by the recording that is actually probed, not by the event: which
+        // recording wins depends on the configuration, and a configuration change
+        // must not hand out the stream layout of the previously chosen file (#3).
+        var cacheKey = $"{eventGuid}|{bestRecording.Folder}|{bestRecording.Language}";
+
+        var mediaStreams = await ProbeMediaStreamsAsync(proxyUrl, cacheKey, cancellationToken).ConfigureAwait(false);
         var audioStream = mediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Audio);
 
         var result = new List<MediaSourceInfo>
@@ -579,9 +595,10 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private async Task<List<MediaStream>> ProbeMediaStreamsAsync(
         string proxyUrl, string cacheKey, CancellationToken cancellationToken)
     {
-        if (_probeCache.TryGetValue(cacheKey, out var cached))
+        var now = _timeProvider.GetUtcNow();
+        if (_probeCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
         {
-            return cached;
+            return cached.Streams;
         }
 
         try
@@ -604,13 +621,36 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 streams.Count, cacheKey,
                 string.Join(", ", streams.Select(s => $"{s.Type}@{s.Index}")));
 
-            _probeCache.TryAdd(cacheKey, streams);
+            _probeCache[cacheKey] = new ProbeCacheEntry(streams, _timeProvider.GetUtcNow().Add(ProbeCacheTtl));
+            EvictProbeCache();
             return streams;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to probe {CacheKey}, returning empty streams", cacheKey);
             return new List<MediaStream>();
+        }
+    }
+
+    private void EvictProbeCache()
+    {
+        var now = _timeProvider.GetUtcNow();
+        foreach (var entry in _probeCache)
+        {
+            if (entry.Value.ExpiresAt <= now)
+            {
+                _probeCache.TryRemove(entry.Key, out _);
+            }
+        }
+
+        // All entries share one TTL, so the earliest expiry is the oldest entry.
+        while (_probeCache.Count > ProbeCacheCapacity)
+        {
+            var oldest = _probeCache.OrderBy(e => e.Value.ExpiresAt).Select(e => e.Key).FirstOrDefault();
+            if (oldest is null || !_probeCache.TryRemove(oldest, out _))
+            {
+                break;
+            }
         }
     }
 
@@ -653,4 +693,6 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         var hash = MD5.HashData(Encoding.UTF8.GetBytes(input));
         return new Guid(hash);
     }
+
+    private sealed record ProbeCacheEntry(List<MediaStream> Streams, DateTimeOffset ExpiresAt);
 }

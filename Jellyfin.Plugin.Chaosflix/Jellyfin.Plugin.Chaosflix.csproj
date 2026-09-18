@@ -22,6 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Jellyfin.Plugin.Chaosflix.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Remove="Configuration\configPage.html" />
     <EmbeddedResource Include="Configuration\configPage.html" />
   </ItemGroup>
