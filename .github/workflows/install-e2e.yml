@@ -1,0 +1,49 @@
+name: Install from manifest
+
+# Tests the published release, not the checked-out code: a fresh Jellyfin adds
+# the repository manifest, downloads the asset, verifies its checksum and loads
+# the plugin. It therefore cannot run on a pull request — it runs after a
+# release, and nightly to catch a new Jellyfin breaking an existing release.
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  schedule:
+    - cron: "43 4 * * *"
+  workflow_dispatch:
+    inputs:
+      jellyfin_tag:
+        description: "Jellyfin image tag to install into"
+        required: false
+        default: "latest"
+      manifest_url:
+        description: "Repository manifest to install from"
+        required: false
+
+concurrency:
+  group: install-e2e
+  cancel-in-progress: false
+
+jobs:
+  install:
+    # A failed release has nothing worth installing.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The manifest is fetched over the network, so the run tests whatever is
+      # published on the default branch right now — the same thing a user gets.
+      - name: Install the published plugin
+        env:
+          JELLYFIN_TAG: ${{ inputs.jellyfin_tag || 'latest' }}
+          MANIFEST_URL: ${{ inputs.manifest_url || '' }}
+          INSTALL_PORT: "8099"
+        run: |
+          if [[ -n "${MANIFEST_URL}" ]]; then
+            ./e2e/install/install-from-manifest.sh
+          else
+            MANIFEST_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${{ github.event.repository.default_branch }}/manifest.json" \
+              ./e2e/install/install-from-manifest.sh
+          fi
