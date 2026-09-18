@@ -2,9 +2,10 @@
 set -euo pipefail
 
 # Runs every test suite in the repo; exits non-zero on the first failure.
-#   1. Release build of the plugin (compile check)
-#   2. All *.Tests.csproj projects via dotnet test
-#   3. Playwright e2e tests in e2e/ (if present)
+#   1. Shell script tests in tests/ (fast, offline, no SDK)
+#   2. Release build of the plugin (compile check)
+#   3. All *.Tests.csproj projects via dotnet test
+#   4. Playwright e2e tests in e2e/ (if present)
 # Uses a local dotnet SDK when available, otherwise the SDK Docker image.
 
 cd "$(dirname "$0")"
@@ -27,6 +28,9 @@ dotnet_run() {
             dotnet "$@"
     fi
 }
+
+echo "🐚 Shell script tests"
+tests/test-release.sh
 
 echo "🔨 Building plugin (net${TFM})..."
 dotnet_run build "$PLUGIN" -c Release
