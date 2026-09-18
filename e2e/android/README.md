@@ -31,6 +31,23 @@ session that is genuinely live.
 Chromecast stays manual, as the issue expected: there is nothing to cast to on
 an emulator.
 
+## The TV app is a different client
+
+This suite drives **jellyfin-android**, the phone app. **jellyfin-androidtv** is
+a separate app with its own playback code, and #55 was a bug only it hit: it
+takes the media source id off the item DTO and sends it back as
+`MediaSourceId`, which for a channel item is the placeholder id Jellyfin puts
+there, and a `PlaybackInfo` that matches no source answers `NoCompatibleStream`
+with no sources at all. `PlaybackController.playInternal` only logs that, so the
+app buffers forever and the server logs nothing after the request.
+
+The regression is covered without an emulator by the "Android TV client" test in
+[`../tests/profiles.spec.ts`](../tests/profiles.spec.ts). To look at the app
+itself, `tv-repro.sh` boots an Android TV emulator with jellyfin-androidtv
+installed against this same stack and then leaves it running for you to drive
+over `adb`; it is a reproduction harness, not a test, and nothing in
+`run-tests.sh` calls it.
+
 ## Maestro, not Appium
 
 Maestro was chosen because the flows are plain YAML, there is no Appium server,

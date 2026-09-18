@@ -1,11 +1,17 @@
 import { expect, test } from "@playwright/test";
-import { apiContext, setPluginConfig, talkNamed } from "../helpers/jellyfin";
+import {
+	apiContext,
+	setPluginConfig,
+	talkNamed,
+	userId,
+} from "../helpers/jellyfin";
 import {
 	ANDROID_EXOPLAYER,
 	BROWSER_WITHOUT_H264,
 	BROWSER_WITH_H264,
 	CHROMECAST,
 	codecReasons,
+	playbackInfoBody,
 	playbackInfoFor,
 } from "../helpers/profiles";
 
@@ -101,5 +107,38 @@ test.describe("client profiles", () => {
 		expect(codecReasons(mp4)).toEqual([]);
 		// Stale probe data would describe the WebM here (#3).
 		expect(mp4.DefaultAudioStreamIndex).toBe(2);
+	});
+});
+
+// jellyfin-androidtv builds its PlaybackInfo request from the media source it
+// finds on the item DTO. For a channel item Jellyfin puts a placeholder there
+// whose id is the item id — the real sources exist only in the PlaybackInfo
+// answer, and the placeholder is dropped from it. So the id the app sends back
+// has to be one the plugin hands out, or PlaybackInfo answers NoCompatibleStream
+// with no sources and the app spins forever without telling anyone (#55).
+test.describe("Android TV client", () => {
+	test("the media source id on the item DTO is one PlaybackInfo accepts", async () => {
+		const api = await apiContext();
+		await setPluginConfig(api, { PreferredFormat: "Mp4" });
+		const talk = await talkNamed(api, "Three stream talk");
+		const user = await userId(api);
+
+		const item = await (
+			await api.get(`/Users/${user}/Items/${talk.Id}`)
+		).json();
+		const fromDto = item.MediaSources[0].Id;
+		expect(fromDto).toBe(talk.Id);
+
+		const body = await playbackInfoBody(
+			api,
+			talk.Id,
+			ANDROID_EXOPLAYER,
+			fromDto,
+		);
+
+		expect(body.ErrorCode ?? null).toBeNull();
+		expect(body.MediaSources).toHaveLength(1);
+		expect(body.MediaSources[0].Id).toBe(fromDto);
+		expect(codecReasons(body.MediaSources[0])).toEqual([]);
 	});
 });

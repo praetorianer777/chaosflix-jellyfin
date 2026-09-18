@@ -106,20 +106,30 @@ export type MediaSource = {
  * Android suite sees the same thing from the other side (IsVideoDirect=true).
  */
 export function codecReasons(source: MediaSource): string[] {
-	const fromUrl = new URLSearchParams((source.TranscodingUrl ?? "").split("?")[1] ?? "");
+	const fromUrl = new URLSearchParams(
+		(source.TranscodingUrl ?? "").split("?")[1] ?? "",
+	);
 	const reasons = [
 		...(source.TranscodeReasons ?? []),
 		...(fromUrl.get("TranscodeReasons")?.split(",") ?? []),
 	];
 
-	return reasons.map((r) => r.trim()).filter((r) => r && r !== "DirectPlayError");
+	return reasons
+		.map((r) => r.trim())
+		.filter((r) => r && r !== "DirectPlayError");
 }
 
-export async function playbackInfoFor(
+export type PlaybackInfoBody = {
+	ErrorCode?: string | null;
+	MediaSources: MediaSource[];
+};
+
+export async function playbackInfoBody(
 	api: APIRequestContext,
 	itemId: string,
 	deviceProfile: Profile,
-): Promise<MediaSource> {
+	mediaSourceId?: string,
+): Promise<PlaybackInfoBody> {
 	const user = await userId(api);
 	const response = await api.post(
 		`/Items/${itemId}/PlaybackInfo?userId=${user}`,
@@ -129,6 +139,7 @@ export async function playbackInfoFor(
 				AutoOpenLiveStream: false,
 				MaxStreamingBitrate: deviceProfile.MaxStreamingBitrate,
 				DeviceProfile: deviceProfile,
+				...(mediaSourceId ? { MediaSourceId: mediaSourceId } : {}),
 			},
 		},
 	);
@@ -136,5 +147,13 @@ export async function playbackInfoFor(
 		response.ok(),
 		`PlaybackInfo for ${deviceProfile.Name} failed: ${response.status()}`,
 	).toBeTruthy();
-	return (await response.json()).MediaSources[0];
+	return await response.json();
+}
+
+export async function playbackInfoFor(
+	api: APIRequestContext,
+	itemId: string,
+	deviceProfile: Profile,
+): Promise<MediaSource> {
+	return (await playbackInfoBody(api, itemId, deviceProfile)).MediaSources[0];
 }
