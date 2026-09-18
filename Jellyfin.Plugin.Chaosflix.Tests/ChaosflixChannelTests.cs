@@ -163,6 +163,22 @@ public class ChaosflixChannelTests
     }
 
     [Fact]
+    public async Task CopiesOutsideTheConferenceFolderAreBackdated()
+    {
+        var date = Day(2024, 12, 28);
+        Conferences(Conference("c", Day(2025)));
+        _api.Json("/public/conferences/c", Conference("c", Day(2025),
+            Event("e1", views: 1000, date: date),
+            Event("e2", views: 2000, date: date)));
+
+        var conference = Assert.Single((await Items("conf:c")).Items, i => i.Id.EndsWith(":e1", StringComparison.Ordinal));
+        var popular = Assert.Single((await Items("virtual:popular")).Items, i => i.Id.EndsWith(":e1", StringComparison.Ordinal));
+
+        Assert.Equal(date.DateTime, conference.DateCreated);
+        Assert.Equal(date.DateTime - ChaosflixChannel.NonCanonicalBackdate, popular.DateCreated);
+    }
+
+    [Fact]
     public async Task PopularUsesFiveMostRecentConferencesSortedByViews()
     {
         var confs = Enumerable.Range(1, 6)
