@@ -139,4 +139,38 @@ test.describe("browsing the channel", () => {
 			).toEqual([...expected].sort());
 		}
 	});
+
+	// #54, still open: a talk listed in several folders is stored once per
+	// folder, so it shows up several times in the library and in Recently Added.
+	// The folder scoping cannot simply be dropped — with one id per talk both
+	// 10.11.7 and 12.1 move the item to the folder listed last and leave the
+	// others empty, which is #15 and is what the test above guards.
+	test.fixme("a talk listed in several folders exists once in the library", async () => {
+		const api = await apiContext();
+		const user = await userId(api);
+		const folders = await channelItems(api);
+		const byYear = folders.find((i) => i.Name.includes("Browse by Year"))!;
+		const years = await channelItems(api, byYear.Id);
+		const conferences = await channelItems(api, years[0].Id);
+
+		for (const folder of [...folders, ...years, ...conferences]) {
+			await channelItems(api, folder.Id);
+		}
+		await runScheduledTask(api, "RefreshInternetChannels");
+
+		const items = (
+			await (
+				await api.get(`/Items?userId=${user}&recursive=true`)
+			).json()
+		).Items as Array<{ Id: string; Name: string }>;
+
+		const talks = ["Long talk", "Three stream talk", "Two stream talk"];
+		const names = items
+			.map((i) => i.Name)
+			.filter((name) => talks.includes(name))
+			.sort();
+		expect(names, "the same talk is stored more than once").toEqual([
+			...new Set(names),
+		]);
+	});
 });

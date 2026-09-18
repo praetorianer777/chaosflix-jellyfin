@@ -2,8 +2,12 @@ import { APIRequestContext, expect, test } from "@playwright/test";
 import {
 	ANDROID_CLIENT,
 	apiContext,
+	clearWatchState,
 	clientContext,
-	playbackInfo,
+	openSession,
+	PlaySession,
+	playUntil,
+	resumePosition,
 	setPluginConfig,
 	talkNamed,
 	userId,
@@ -24,58 +28,6 @@ import { ANDROID_EXOPLAYER, BROWSER_WITHOUT_H264 } from "../helpers/profiles";
 
 const TALK = "Long talk";
 const seconds = (value: number) => value * 10_000_000;
-
-type Session = {
-	ItemId: string;
-	MediaSourceId: string;
-	PlaySessionId: string;
-	CanSeek: boolean;
-};
-
-async function openSession(
-	api: APIRequestContext,
-	itemId: string,
-	deviceProfile: { MaxStreamingBitrate: number },
-	fromTicks: number,
-): Promise<Session> {
-	const source = await playbackInfo(api, itemId, deviceProfile);
-	const session = {
-		ItemId: itemId,
-		MediaSourceId: source.Id,
-		PlaySessionId: source.PlaySessionId,
-		CanSeek: true,
-	};
-	const started = await api.post("/Sessions/Playing", {
-		data: { ...session, PositionTicks: fromTicks },
-	});
-	expect(started.ok(), `reporting playback start: ${started.status()}`).toBe(
-		true,
-	);
-	return session;
-}
-
-async function playUntil(
-	api: APIRequestContext,
-	session: Session,
-	positionTicks: number,
-): Promise<void> {
-	await api.post("/Sessions/Playing/Progress", {
-		data: { ...session, PositionTicks: positionTicks, IsPaused: false },
-	});
-	await api.post("/Sessions/Playing/Stopped", {
-		data: { ...session, PositionTicks: positionTicks },
-	});
-}
-
-async function resumePosition(
-	api: APIRequestContext,
-	itemId: string,
-): Promise<number | undefined> {
-	const item = await (
-		await api.get(`/Users/${await userId(api)}/Items/${itemId}`)
-	).json();
-	return item.UserData?.PlaybackPositionTicks;
-}
 
 async function resumeList(api: APIRequestContext): Promise<string[]> {
 	const response = await api.get(
@@ -103,11 +55,7 @@ test.describe("resume across clients", () => {
 	});
 
 	test.beforeEach(async () => {
-		const api = await apiContext();
-		const response = await api.delete(
-			`/UserPlayedItems/${talkId}?userId=${await userId(api)}`,
-		);
-		expect(response.ok(), "clearing the watch state failed").toBe(true);
+		await clearWatchState(await apiContext(), talkId);
 	});
 
 	test("the talk is long enough for Jellyfin to keep a position at all", async () => {

@@ -447,6 +447,21 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         return separator < 0 ? id : id[(separator + 1)..];
     }
 
+    /// <summary>
+    /// Reads the CCC event guid out of a channel item id that the channel handed
+    /// out, or returns <see langword="null"/> for anything else.
+    /// </summary>
+    internal static string? EventGuidOf(string? channelItemId)
+    {
+        if (string.IsNullOrEmpty(channelItemId) || !channelItemId.StartsWith(PrefixEvent, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var guid = ExtractEventGuid(channelItemId);
+        return string.IsNullOrEmpty(guid) ? null : guid;
+    }
+
     // ── Mapping ──────────────────────────────────────────
 
     private static ChannelItemInfo MapEventToChannelItem(CccEvent e, string scope)
