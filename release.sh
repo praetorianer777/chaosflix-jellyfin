@@ -459,56 +459,13 @@ echo "   ✅ ${PROPS}"
 echo "   ✅ ${META}"
 echo "   ✅ ${MANIFEST}"
 
-# ── 2. Build ─────────────────────────────────────────────
+# The artifact is deliberately not built here: the release workflow builds the
+# ZIP, uploads it and writes the md5 of the bytes it uploaded into
+# manifest.json. A ZIP built on this machine would never be byte-identical to
+# the published one, so its checksum described bytes nobody could download
+# (#49). That also keeps releasing free of a local zip or .NET SDK.
 
-echo ""
-echo "🔨 Building..."
-
-if command -v docker &>/dev/null; then
-    CERT_MOUNT=""
-    if [[ -d "/usr/local/share/ca-certificates" ]]; then
-        CERT_MOUNT="-v /usr/local/share/ca-certificates:/usr/local/share/ca-certificates:ro"
-    fi
-    # shellcheck disable=SC2086
-    docker run --rm \
-        -v "$(pwd):/src" \
-        ${CERT_MOUNT} \
-        -w /src \
-        mcr.microsoft.com/dotnet/sdk:9.0 \
-        bash -c "update-ca-certificates 2>/dev/null; dotnet publish Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj -c Release -o /src/artifacts" 2>&1 | tail -3
-else
-    dotnet publish Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj -c Release -o ./artifacts 2>&1 | tail -3
-fi
-
-cp "${META}" artifacts/
-echo "   ✅ Build succeeded"
-
-# ── 3. Create ZIP ────────────────────────────────────────
-
-echo ""
-echo "📦 Creating ${ZIP_NAME}..."
-cd artifacts
-zip -j "../${ZIP_NAME}" Jellyfin.Plugin.Chaosflix.dll meta.json
-cd ..
-echo "   ✅ $(du -h "${ZIP_NAME}" | cut -f1) — ${ZIP_NAME}"
-
-# ── 4. Update checksum ──────────────────────────────────
-
-MD5=$(md5sum "${ZIP_NAME}" | cut -d' ' -f1)
-MANIFEST="${MANIFEST}" MD5="${MD5}" python3 -c "
-import json, os
-
-path = os.environ['MANIFEST']
-with open(path) as f:
-    data = json.load(f)
-data[0]['versions'][0]['checksum'] = os.environ['MD5']
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
-"
-echo "   ✅ Checksum: ${MD5}"
-
-# ── 5. Git commit + tag ─────────────────────────────────
+# ── 2. Git commit + tag ─────────────────────────────────
 
 echo ""
 echo "📝 Committing..."
@@ -535,7 +492,6 @@ echo "🎉 Done! Next steps:"
 echo ""
 echo "   git push origin main --tags"
 echo ""
-echo "   The release workflow picks the tag up and publishes ${ZIP_NAME}"
-echo "   with these notes. Without CI, publish it by hand:"
-echo "   gh release create ${TAG} ${ZIP_NAME} --title ${TAG} --notes-file ${NOTES_FILE}"
+echo "   The release workflow builds ${ZIP_NAME} from the tag, publishes it"
+echo "   with these notes and commits its checksum into ${MANIFEST}."
 echo ""

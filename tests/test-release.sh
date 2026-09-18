@@ -206,8 +206,14 @@ PROPS_VERSIONS=$(grep -oP '<(Version|AssemblyVersion|FileVersion)>\K[^<]+' \
     "${SANDBOX}/Directory.Build.props" | sort -u | tr '\n' ' ')
 check "Directory.Build.props versions are four-part" "${PROPS_VERSIONS}" "0.0.30.0 "
 
-check "checksum is the MD5 of the ZIP" "${CHECKSUM}" \
-    "$(md5sum "${SANDBOX}/chaosflix-jellyfin-v0.0.30.zip" | cut -d' ' -f1)"
+# The release workflow fills this in from the asset it uploaded (#49); a
+# checksum written here would describe a ZIP that is never published.
+check "checksum is left empty for the workflow" "${CHECKSUM}" ""
+if [[ -e "${SANDBOX}/chaosflix-jellyfin-v0.0.30.zip" ]]; then
+    fail "release.sh does not build a ZIP"
+else
+    pass "release.sh does not build a ZIP"
+fi
 
 STAGED=$(grep -P '^add\t' "${VCS_LOG}" | head -1 | tr '\t' ' ' | sed 's/ *$//')
 check "only the release files are staged" "${STAGED}" \
@@ -342,10 +348,10 @@ COMMIT_SUBJECT=$(grep -P '^commit\t' "${VCS_LOG}" | head -1 | cut -f3)
 check "the release commit subject stays one short line" \
     "${COMMIT_SUBJECT}" "release: v0.0.31"
 
-if grep -q 'gh release create v0.0.31 chaosflix-jellyfin-v0.0.31.zip' "${WORK}/out.log"; then
-    pass "a ready-to-run gh release command is printed"
+if grep -q 'chaosflix-jellyfin-v0.0.31.zip' "${WORK}/out.log"; then
+    pass "the asset the workflow will publish is named"
 else
-    fail "a ready-to-run gh release command is printed"
+    fail "the asset the workflow will publish is named"
 fi
 if grep -q 'add a search box' "${WORK}/out.log"; then
     pass "the notes are printed for pasting"
