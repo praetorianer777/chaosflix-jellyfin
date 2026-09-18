@@ -39,7 +39,8 @@ ffmpeg_run() {
         ffmpeg "$@"
     else
         # The image ships jellyfin-ffmpeg, and nothing named ffmpeg is on PATH.
-        docker run --rm --user "$(id -u):$(id -g)" -v "$MEDIA_DIR:/media" \
+        # Mounted at its host path so the arguments need no rewriting.
+        docker run --rm --user "$(id -u):$(id -g)" -v "$MEDIA_DIR:$MEDIA_DIR" \
             --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg \
             jellyfin/jellyfin:"${JELLYFIN_TAG:-10.11.7}" "$@"
     fi
