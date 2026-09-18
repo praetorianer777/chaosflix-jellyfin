@@ -94,9 +94,21 @@ for arg in "$@"; do
 done
 EOF
 
+# The history the notes are generated from is handed to the stub instead of a
+# real repository: FAKE_PREV_TAG is what "git describe" answers, FAKE_LOG the
+# file "git log" prints.
 cat > "${SANDBOX}/bin/git" <<'EOF'
 #!/usr/bin/env bash
 { printf '%s\t' "$@"; echo; } >> "${VCS_LOG}"
+case "$1" in
+    describe)
+        [[ -n "${FAKE_PREV_TAG:-}" ]] && echo "${FAKE_PREV_TAG}"
+        ;;
+    log)
+        [[ -n "${FAKE_LOG:-}" && -s "${FAKE_LOG}" ]] && cat "${FAKE_LOG}"
+        ;;
+esac
+exit 0
 EOF
 
 chmod +x "${SANDBOX}/bin/"*
@@ -170,7 +182,7 @@ check "checksum is the MD5 of the ZIP" "${CHECKSUM}" \
 
 STAGED=$(grep -P '^add\t' "${VCS_LOG}" | head -1 | tr '\t' ' ' | sed 's/ *$//')
 check "only the release files are staged" "${STAGED}" \
-    "add Directory.Build.props Jellyfin.Plugin.Chaosflix/meta.json manifest.json"
+    "add Directory.Build.props Jellyfin.Plugin.Chaosflix/meta.json manifest.json CHANGELOG.md"
 
 if grep -qi 'co-authored-by' "${VCS_LOG}"; then
     fail "release commit still carries a Co-authored-by trailer"
@@ -192,6 +204,175 @@ fi
 AFTER=$(md5sum "${SANDBOX}/manifest.json" "${SANDBOX}/Directory.Build.props" \
     "${SANDBOX}/Jellyfin.Plugin.Chaosflix/meta.json")
 check "no file was modified by the rejected run" "${AFTER}" "${BEFORE}"
+
+# ── Generated release notes (#19) ────────────────────────
+
+FAKE_LOG="${WORK}/fake-log"
+log_reset() { : > "${FAKE_LOG}"; }
+log_entry() { printf '%s\x1f%s\x1f%s\x1e' "$1" "$2" "${3:-}" >> "${FAKE_LOG}"; }
+
+run_release() {
+    local prev_tag="$1"
+    shift
+    : > "${VCS_LOG}"
+    (cd "${SANDBOX}" && PATH="${SANDBOX}/bin:${PATH}" VCS_LOG="${VCS_LOG}" \
+        FAKE_LOG="${FAKE_LOG}" FAKE_PREV_TAG="${prev_tag}" \
+        ./release.sh "$@") > "${WORK}/out.log" 2>&1
+}
+
+echo "🧪 release.sh — notes generated from the commits since the previous tag"
+log_reset
+log_entry 1111111111111111111111111111111111111111 "feat: add a search box"
+log_entry 2222222222222222222222222222222222222222 "fix: stop the proxy hanging (#42)"
+log_entry 3333333333333333333333333333333333333333 "feat!: drop the old config keys"
+log_entry 4444444444444444444444444444444444444444 "chore: bump a dependency"
+log_entry 5555555555555555555555555555555555555555 "Update README by hand"
+log_entry 6666666666666666666666666666666666666666 "refactor: split the client" \
+    "BREAKING CHANGE: watch state is reset"
+log_entry 7777777777777777777777777777777777777777 "release: v0.0.30 — Release v0.0.30"
+
+if ! run_release "" 0.0.31; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+
+NOTES="${SANDBOX}/release-notes-v0.0.31.md"
+if [[ -f "${NOTES}" ]]; then
+    pass "release notes file is written"
+else
+    fail "release notes file is missing"
+fi
+
+section_of() {  # item -> heading it landed under
+    python3 - "${NOTES}" "$1" <<'EOF'
+import sys
+
+heading = ""
+with open(sys.argv[1]) as f:
+    for line in f:
+        line = line.rstrip("\n")
+        if line.startswith("### "):
+            heading = line[4:]
+        elif sys.argv[2] in line:
+            print(heading, end="")
+            break
+    else:
+        print("<missing>", end="")
+EOF
+}
+
+check "a feature lands under Features" "$(section_of 'add a search box')" "Features"
+check "a fix lands under Bug fixes" "$(section_of 'stop the proxy hanging')" "Bug fixes"
+check "a chore lands under Other" "$(section_of 'bump a dependency')" "Other"
+check "a non-conforming subject is not lost" \
+    "$(section_of 'Update README by hand')" "Other"
+check "a release commit is skipped" "$(section_of 'Release v0.0.30')" "<missing>"
+check "an exclamation mark makes a breaking change" \
+    "$(section_of 'drop the old config keys')" "Breaking changes"
+check "a BREAKING CHANGE trailer makes a breaking change" \
+    "$(section_of 'watch state is reset')" "Breaking changes"
+check "breaking changes come first" \
+    "$(grep -m1 '^### ' "${NOTES}")" "### Breaking changes"
+check "issue references are kept" \
+    "$(grep -c 'stop the proxy hanging (#42)' "${NOTES}" || true)" "1"
+check "every item carries its short SHA" \
+    "$(grep -c '(1111111)' "${NOTES}" || true)" "1"
+
+if grep -q 'generated from the commits since the first commit' "${WORK}/out.log"; then
+    pass "a missing previous tag falls back to the whole history"
+else
+    fail "a missing previous tag falls back to the whole history"
+fi
+
+check "changelog file is created with a Keep a Changelog header" \
+    "$(head -1 "${SANDBOX}/CHANGELOG.md")" "# Changelog"
+check "the section of the previous release is kept" \
+    "$(grep -c '^## \[0.0.30\]' "${SANDBOX}/CHANGELOG.md" || true)" "1"
+if grep -q '^## \[0.0.31\] - [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}$' "${SANDBOX}/CHANGELOG.md"; then
+    pass "changelog file carries the released version and date"
+else
+    fail "changelog file carries the released version and date"
+fi
+
+MANIFEST_NOTES=$(python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    print(json.load(f)[0]['versions'][0]['changelog'], end='')
+" "${SANDBOX}/manifest.json")
+if [[ "${MANIFEST_NOTES}" == *"Features:"* && "${MANIFEST_NOTES}" == *"### "* ]]; then
+    fail "manifest changelog carries the full markdown"
+elif [[ "${MANIFEST_NOTES}" == *"Features:"* && "${MANIFEST_NOTES}" == *"add a search box"* ]]; then
+    pass "manifest changelog is the compact list"
+else
+    fail "manifest changelog is the compact list: got [${MANIFEST_NOTES}]"
+fi
+
+COMMIT_SUBJECT=$(grep -P '^commit\t' "${VCS_LOG}" | head -1 | cut -f3)
+check "the release commit subject stays one short line" \
+    "${COMMIT_SUBJECT}" "release: v0.0.31"
+
+if grep -q 'gh release create v0.0.31 chaosflix-jellyfin-v0.0.31.zip' "${WORK}/out.log"; then
+    pass "a ready-to-run gh release command is printed"
+else
+    fail "a ready-to-run gh release command is printed"
+fi
+if grep -q 'add a search box' "${WORK}/out.log"; then
+    pass "the notes are printed for pasting"
+else
+    fail "the notes are printed for pasting"
+fi
+
+if grep -qP '^push\t' "${VCS_LOG}"; then
+    fail "release.sh pushed by itself"
+else
+    pass "release.sh does not push by itself"
+fi
+
+# ── The changelog file is prepended to, never overwritten ─
+
+echo "🧪 release.sh — a second release prepends to CHANGELOG.md"
+log_reset
+log_entry 8888888888888888888888888888888888888888 "fix: repair the second thing"
+if ! run_release "v0.0.31" 0.0.32; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+
+check "the earlier section is still there" \
+    "$(grep -c '^## \[0.0.31\]' "${SANDBOX}/CHANGELOG.md" || true)" "1"
+check "the header is not repeated" \
+    "$(grep -c '^# Changelog$' "${SANDBOX}/CHANGELOG.md" || true)" "1"
+check "the newest section is on top" \
+    "$(grep -m1 '^## \[' "${SANDBOX}/CHANGELOG.md")" "## [0.0.32] - $(date -u +%Y-%m-%d)"
+check "the previous tag bounds the history" \
+    "$(grep -c 'add a search box' "${SANDBOX}/release-notes-v0.0.32.md" || true)" "0"
+
+# ── A changelog given on the command line still wins ─────
+
+echo "🧪 release.sh — a changelog argument overrides the generated notes"
+log_reset
+log_entry 9999999999999999999999999999999999999999 "feat: add something generated"
+if ! run_release "v0.0.32" 0.0.33 "Handwritten note"; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+
+OVERRIDE=$(python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    print(json.load(f)[0]['versions'][0]['changelog'], end='')
+" "${SANDBOX}/manifest.json")
+check "the manual changelog wins in manifest.json" "${OVERRIDE}" "Handwritten note"
+check "the generated notes are not used" \
+    "$(grep -c 'add something generated' "${SANDBOX}/CHANGELOG.md" || true)" "0"
+check "the manual changelog reaches CHANGELOG.md" \
+    "$(grep -c 'Handwritten note' "${SANDBOX}/CHANGELOG.md" || true)" "1"
+MANUAL_SUBJECT=$(grep -P '^commit\t' "${VCS_LOG}" | head -1 | cut -f3)
+check "the manual changelog reaches the commit subject" \
+    "${MANUAL_SUBJECT}" "release: v0.0.33 — Handwritten note"
 
 # ── The files that are actually published ────────────────
 
