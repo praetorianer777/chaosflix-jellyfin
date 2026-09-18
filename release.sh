@@ -522,7 +522,9 @@ else
     # has to stay one short line.
     git commit -m "release: ${TAG}" -m "${CHANGELOG}"
 fi
-git tag "${TAG}"
+# Annotated with the notes: release-notes-*.md is git-ignored, so the tag
+# message is what a release built from the tag (CI) has to work with.
+git tag -a "${TAG}" -F "${NOTES_FILE}"
 
 echo ""
 echo "📰 Release notes (${NOTES_FILE}):"
@@ -532,5 +534,8 @@ echo ""
 echo "🎉 Done! Next steps:"
 echo ""
 echo "   git push origin main --tags"
+echo ""
+echo "   The release workflow picks the tag up and publishes ${ZIP_NAME}"
+echo "   with these notes. Without CI, publish it by hand:"
 echo "   gh release create ${TAG} ${ZIP_NAME} --title ${TAG} --notes-file ${NOTES_FILE}"
 echo ""
