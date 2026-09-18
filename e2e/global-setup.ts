@@ -22,6 +22,11 @@ const run = (command: string, args: string[]) =>
 export default async function globalSetup() {
 	if (!process.env.E2E_REUSE_STACK) {
 		run(path.join(here, "scripts/build-artifacts.sh"), []);
+		// A stack left behind by an interrupted run keeps its volumes, and a
+		// half-initialised Jellyfin then fails the suite for reasons that have
+		// nothing to do with the code under test — which blocks every push,
+		// because the gate runs this (#46).
+		run("docker", ["compose", "down", "-v"]);
 		run("docker", ["compose", "up", "-d", "--wait"]);
 	}
 

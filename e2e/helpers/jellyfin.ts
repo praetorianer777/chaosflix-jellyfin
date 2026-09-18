@@ -102,7 +102,9 @@ export async function authenticate(api: APIRequestContext): Promise<string> {
 	});
 	expect(
 		response.ok(),
-		`authentication failed: ${response.status()} ${await response.text()}`,
+		response.status() === 500
+			? `authentication failed with 500: the Jellyfin stack is in an unexpected state (leftover volumes from an interrupted run?). Try: docker compose -p <project> down -v. Body: ${await response.text()}`
+			: `authentication failed: ${response.status()} ${await response.text()}`,
 	).toBeTruthy();
 	return (await response.json()).AccessToken as string;
 }
