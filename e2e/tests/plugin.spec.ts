@@ -77,22 +77,37 @@ test.describe("plugin installation", () => {
 		});
 	});
 
-	// eslint-disable-next-line playwright/no-skipped-test
-	test.fixme("settings page loads and saves the configuration", async ({
-		page,
-	}) => {
-		// Blocked by #13: configPage.html uses an invalid plugin ID, so the page
-		// never loads the stored configuration and Save is a no-op.
+	test("settings page loads and saves the configuration", async ({ page }) => {
+		const api = await apiContext();
+		await setPluginConfig(api, {
+			PreferredQuality: "High",
+			PreferredLanguage: "",
+			ApiBaseUrl: FAKE_API,
+		});
+
 		await loginUi(page);
+		// The route the plugin's detail page in the dashboard links to.
 		await gotoAuthenticated(page, "/web/#/configurationpage?name=Chaosflix");
 
 		await expect(page.locator("#ApiBaseUrl")).toHaveValue(FAKE_API);
+		await expect(page.locator("#PreferredQuality")).toHaveValue("High");
+		await expect(page.locator("#PreferredLanguage")).toHaveValue("");
+
 		await page.locator("#PreferredQuality").selectOption("Standard");
+		await page.locator("#PreferredLanguage").selectOption("eng");
 		await page.getByRole("button", { name: /save/i }).click();
 
-		const api = await apiContext();
 		await expect
-			.poll(async () => (await getPluginConfig(api)).PreferredQuality)
-			.toBe("Standard");
+			.poll(async () => {
+				const config = await getPluginConfig(api);
+				return `${config.PreferredQuality}/${config.PreferredLanguage}/${config.ApiBaseUrl}`;
+			})
+			.toBe(`Standard/eng/${FAKE_API}`);
+
+		// Later specs expect the defaults the global setup installed.
+		await setPluginConfig(api, {
+			PreferredQuality: "High",
+			PreferredLanguage: "",
+		});
 	});
 });
