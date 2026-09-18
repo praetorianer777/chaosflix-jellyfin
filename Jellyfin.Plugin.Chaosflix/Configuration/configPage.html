@@ -51,40 +51,42 @@
                 </form>
             </div>
         </div>
-    </div>
 
-    <script type="text/javascript">
-        var ChaosflixConfig = {
-            pluginUniqueId: 'c4a0sf11-x4cc-cb00-bdea-dbeef1337000'
-        };
+        <script type="text/javascript">
+            var ChaosflixConfig = {
+                pluginUniqueId: 'c4a05f11-4ccc-4b00-bdea-dbeef1337000'
+            };
 
-        document.querySelector('#ChaosflixConfigPage')
-            .addEventListener('pageshow', function () {
-                Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(ChaosflixConfig.pluginUniqueId).then(function (config) {
-                    document.querySelector('#PreferredQuality').value = config.PreferredQuality || 'High';
-                    document.querySelector('#PreferredFormat').value = config.PreferredFormat || 'Mp4';
-                    document.querySelector('#PreferredLanguage').value = config.PreferredLanguage || '';
-                    document.querySelector('#ApiBaseUrl').value = config.ApiBaseUrl || '';
-                    Dashboard.hideLoadingMsg();
-                });
-            });
+            (function () {
+                var page = document.querySelector('#ChaosflixConfigPage');
 
-        document.querySelector('#ChaosflixConfigForm')
-            .addEventListener('submit', function (e) {
-                Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(ChaosflixConfig.pluginUniqueId).then(function (config) {
-                    config.PreferredQuality = document.querySelector('#PreferredQuality').value;
-                    config.PreferredFormat = document.querySelector('#PreferredFormat').value;
-                    config.PreferredLanguage = document.querySelector('#PreferredLanguage').value;
-                    config.ApiBaseUrl = document.querySelector('#ApiBaseUrl').value;
-                    ApiClient.updatePluginConfiguration(ChaosflixConfig.pluginUniqueId, config).then(function () {
-                        Dashboard.processPluginConfigurationUpdateResult();
+                page.addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(ChaosflixConfig.pluginUniqueId).then(function (config) {
+                        page.querySelector('#PreferredQuality').value = config.PreferredQuality || 'High';
+                        page.querySelector('#PreferredFormat').value = config.PreferredFormat || 'Mp4';
+                        page.querySelector('#PreferredLanguage').value = config.PreferredLanguage || '';
+                        page.querySelector('#ApiBaseUrl').value = config.ApiBaseUrl || '';
+                        Dashboard.hideLoadingMsg();
                     });
                 });
-                e.preventDefault();
-                return false;
-            });
-    </script>
+
+                page.querySelector('#ChaosflixConfigForm').addEventListener('submit', function (e) {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(ChaosflixConfig.pluginUniqueId).then(function (config) {
+                        config.PreferredQuality = page.querySelector('#PreferredQuality').value;
+                        config.PreferredFormat = page.querySelector('#PreferredFormat').value;
+                        config.PreferredLanguage = page.querySelector('#PreferredLanguage').value;
+                        config.ApiBaseUrl = page.querySelector('#ApiBaseUrl').value;
+                        ApiClient.updatePluginConfiguration(ChaosflixConfig.pluginUniqueId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+                    e.preventDefault();
+                    return false;
+                });
+            })();
+        </script>
+    </div>
 </body>
 </html>
