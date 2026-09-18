@@ -2,7 +2,11 @@
 set -euo pipefail
 
 # Chaosflix release script
-# Usage: ./release.sh 0.0.2 "Added search feature, bugfixes"
+# Usage: ./release.sh [version] [changelog] [--dry-run]
+#   ./release.sh                        version inferred from the commit history
+#   ./release.sh 0.0.2                  version given by hand, notes generated
+#   ./release.sh 0.0.2 "Added search"   version and changelog given by hand
+#   ./release.sh --dry-run              print version and notes, change nothing
 
 REPO_OWNER="praetorianer777"
 REPO_NAME="chaosflix-jellyfin"
@@ -17,26 +21,29 @@ CHANGELOG_FILE="CHANGELOG.md"
 # the current targetAbi the newest KEEP_PER_ABI entries are kept.
 KEEP_PER_ABI="${KEEP_PER_ABI:-5}"
 
-if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 <version> [changelog]"
-    echo "Example: $0 0.0.2 \"Added search, fixed caching\""
+DRY_RUN=0
+ARGS=()
+for arg in "$@"; do
+    case "${arg}" in
+        --dry-run) DRY_RUN=1 ;;
+        -h|--help)
+            sed -n '4,9p' "$0" | sed 's|^# \?||'
+            exit 0
+            ;;
+        *) ARGS+=("${arg}") ;;
+    esac
+done
+if (( ${#ARGS[@]} > 2 )); then
+    echo "Usage: $0 [version] [changelog] [--dry-run]"
     exit 1
 fi
+VERSION="${ARGS[0]:-}"
+MANUAL_CHANGELOG="${ARGS[1]:-}"
 
-VERSION="$1"
-if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+if [[ -n "${VERSION}" && ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
     echo "❌ Version must be X.Y.Z or X.Y.Z.W (digits only), got: ${VERSION}"
     exit 1
 fi
-# .NET treats a missing component as -1, so 0.1.0 < 0.1.0.0: every file that
-# carries the version has to use the same four-part form. Tag and ZIP keep the
-# three-part form the published releases already use.
-VERSION_THREE=$(cut -d. -f1-3 <<< "${VERSION}")
-VERSION_FOUR="${VERSION_THREE}.$(cut -d. -f4 <<< "${VERSION}.0")"
-MANUAL_CHANGELOG="${2:-}"
-TAG="v${VERSION_THREE}"
-ZIP_NAME="chaosflix-jellyfin-${TAG}.zip"
-SOURCE_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${TAG}/${ZIP_NAME}"
 
 # meta.json holds the single source of truth for targetAbi — the *minimum*
 # server version that may install and load this build. It is copied into every
@@ -51,19 +58,172 @@ if [[ ! "${TARGET_ABI}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-# ── 0. Release notes ────────────────────────────────────
+# ── 0. The commits since the previous tag ───────────────
+
+PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+RANGE="HEAD"
+[[ -n "${PREV_TAG}" ]] && RANGE="${PREV_TAG}..HEAD"
+# \x1f separates the fields of a commit, \x1e the commits: neither can
+# occur in a subject or body, unlike any printable delimiter.
+RAW_LOG=$(git log --no-merges --format="%H%x1f%s%x1f%b%x1e" "${RANGE}" 2>/dev/null || true)
+
+# ── 0a. Next version ────────────────────────────────────
+
+# Without a version argument the number is derived from those commits (#19).
+# The reasoning is printed before anything is written, so the bump can be
+# checked before it is released.
+if [[ -z "${VERSION}" ]]; then
+    # The tagged meta.json is the only record of the targetAbi the previous
+    # release shipped with; a raise since then changes which servers may
+    # install the plugin and is therefore a MINOR on its own.
+    PREV_ABI=""
+    if [[ -n "${PREV_TAG}" ]]; then
+        PREV_ABI=$(git show "${PREV_TAG}:${META}" 2>/dev/null \
+            | python3 -c "
+import json, sys
+try:
+    print(json.load(sys.stdin)['targetAbi'])
+except Exception:
+    pass
+" || true)
+    fi
+    CURRENT_VERSION=$(META="${META}" python3 -c "
+import json, os
+with open(os.environ['META']) as f:
+    print(json.load(f)['version'])
+")
+    # Values reach Python through the environment, never interpolated.
+    VERSION=$(
+        RAW_LOG="${RAW_LOG}" \
+        PREV_TAG="${PREV_TAG}" \
+        CURRENT_VERSION="${CURRENT_VERSION}" \
+        PREV_ABI="${PREV_ABI}" \
+        TARGET_ABI="${TARGET_ABI}" \
+        python3 - <<'PY'
+import os
+import re
+import sys
+
+HEADER = re.compile(
+    r'^(?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s+(?P<desc>.+)$')
+TRAILER = re.compile(r'^BREAKING[ -]CHANGE:\s*')
+NO_RELEASE = ('chore', 'docs', 'test', 'build', 'ci', 'refactor', 'style', 'perf')
+
+
+def parts(version):
+    numbers = [int(n) for n in version.split('.')]
+    return tuple(numbers + [0] * (4 - len(numbers)))[:4]
+
+
+raw = os.environ.get('RAW_LOG', '')
+prev_tag = os.environ.get('PREV_TAG', '')
+current = os.environ['CURRENT_VERSION']
+prev_abi = os.environ.get('PREV_ABI', '')
+target_abi = os.environ['TARGET_ABI']
+
+# The tag can be ahead of the files (or the other way round); the next version
+# has to be above both, or the server sees a release it already has.
+base = parts(current)
+if prev_tag:
+    tagged = re.match(r'^v?([0-9]+(?:\.[0-9]+)*)$', prev_tag)
+    if tagged:
+        base = max(base, parts(tagged.group(1)))
+
+counts = {}
+breaking = []
+for record in raw.split('\x1e'):
+    if not record.strip():
+        continue
+    fields = record.strip('\n').split('\x1f')
+    subject = fields[1] if len(fields) > 1 else ''
+    body = fields[2] if len(fields) > 2 else ''
+    match = HEADER.match(subject)
+    ctype = match.group('type').lower() if match else ''
+    if ctype == 'release':
+        continue
+    counts[ctype or 'other'] = counts.get(ctype or 'other', 0) + 1
+    if (match and match.group('bang')) or any(
+            TRAILER.match(line.strip()) for line in body.splitlines()):
+        breaking.append(subject)
+
+total = sum(counts.values())
+abi_raised = bool(prev_abi) and parts(target_abi) > parts(prev_abi)
+
+major, minor, patch = base[0], base[1], base[2]
+if not total:
+    rule = None
+elif breaking and major == 0:
+    # A 0.x MAJOR bump would declare 1.0; while below 1.0.0 a breaking change
+    # is degraded to MINOR, as semver itself suggests.
+    rule = 'a breaking change, but the project is below 1.0.0 → MINOR'
+    minor, patch = minor + 1, 0
+elif breaking:
+    rule = 'a breaking change → MAJOR'
+    major, minor, patch = major + 1, 0, 0
+elif counts.get('feat'):
+    rule = 'a feat → MINOR'
+    minor, patch = minor + 1, 0
+elif abi_raised:
+    rule = 'targetAbi raised (%s → %s) → MINOR' % (prev_abi, target_abi)
+    minor, patch = minor + 1, 0
+elif counts.get('fix'):
+    rule = 'a fix → PATCH'
+    patch += 1
+elif all(ctype in NO_RELEASE for ctype in counts):
+    rule = ('only %s and nothing user-facing → PATCH'
+            % ', '.join(sorted(counts)))
+    patch += 1
+else:
+    rule = 'changes without a release type → PATCH'
+    patch += 1
+
+summary = ', '.join('%s: %d' % (t, n) for t, n in sorted(counts.items())) or 'none'
+log = sys.stderr
+print('🔢 Working out the next version (no version given)', file=log)
+print('   Previous version: %d.%d.%d (%s)'
+      % (base[0], base[1], base[2], prev_tag or 'no tag yet'), file=log)
+print('   Commits since:    %d (%s)' % (total, summary), file=log)
+if breaking:
+    print('   Breaking:         %d (%s)'
+          % (len(breaking), '; '.join(breaking)), file=log)
+print('   targetAbi:        %s (%s)'
+      % (target_abi,
+         'raised from %s' % prev_abi if abi_raised
+         else 'unchanged' if prev_abi else 'no previous value'), file=log)
+
+if rule is None:
+    print('   Rule:             no commits since %s — nothing to release'
+          % (prev_tag or 'the first commit'), file=log)
+    print('❌ No commits since %s; nothing was changed.'
+          % (prev_tag or 'the first commit'), file=log)
+    sys.exit(2)
+
+print('   Rule:             %s' % rule, file=log)
+print('   Next version:     %d.%d.%d' % (major, minor, patch), file=log)
+print('%d.%d.%d' % (major, minor, patch))
+PY
+    ) || exit 1
+    INFERRED=1
+else
+    INFERRED=0
+fi
+
+# .NET treats a missing component as -1, so 0.1.0 < 0.1.0.0: every file that
+# carries the version has to use the same four-part form. Tag and ZIP keep the
+# three-part form the published releases already use.
+VERSION_THREE=$(cut -d. -f1-3 <<< "${VERSION}")
+VERSION_FOUR="${VERSION_THREE}.$(cut -d. -f4 <<< "${VERSION}.0")"
+TAG="v${VERSION_THREE}"
+ZIP_NAME="chaosflix-jellyfin-${TAG}.zip"
+SOURCE_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${TAG}/${ZIP_NAME}"
+
+# ── 0b. Release notes ───────────────────────────────────
 
 # The notes are derived from the commits since the previous tag (see #19); a
 # changelog passed as the second argument still overrides the generated one.
 NOTES_FILE="release-notes-${TAG}.md"
-RAW_LOG=""
-if [[ -z "${MANUAL_CHANGELOG}" ]]; then
-    PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
-    RANGE="HEAD"
-    [[ -n "${PREV_TAG}" ]] && RANGE="${PREV_TAG}..HEAD"
-    # \x1f separates the fields of a commit, \x1e the commits: neither can
-    # occur in a subject or body, unlike any printable delimiter.
-    RAW_LOG=$(git log --no-merges --format="%H%x1f%s%x1f%b%x1e" "${RANGE}" 2>/dev/null || true)
+if [[ -n "${MANUAL_CHANGELOG}" ]]; then
+    RAW_LOG=""
 fi
 
 # Same reason as below: everything reaches Python through the environment.
@@ -74,9 +234,11 @@ CHANGELOG=$(
     RELEASE_DATE="$(date -u +%Y-%m-%d)" \
     NOTES_FILE="${NOTES_FILE}" \
     CHANGELOG_FILE="${CHANGELOG_FILE}" \
+    DRY_RUN="${DRY_RUN}" \
     python3 - <<'PY'
 import os
 import re
+import sys
 
 version = os.environ['VERSION_THREE']
 release_date = os.environ['RELEASE_DATE']
@@ -178,6 +340,15 @@ else:
     body = markdown(sections)
     short = compact(sections) or 'Release v%s' % version
 
+if os.environ.get('DRY_RUN') == '1':
+    # Nothing is written; the notes go to stderr so stdout stays the short form.
+    print('📰 Release notes that would be written to %s:\n' % notes_path,
+          file=sys.stderr)
+    print('\n'.join('   ' + line for line in body.split('\n')),
+          file=sys.stderr)
+    print(short, end='')
+    raise SystemExit(0)
+
 with open(notes_path, 'w') as f:
     f.write(body.rstrip('\n') + '\n')
 
@@ -202,14 +373,23 @@ print(short, end='')
 PY
 )
 
-echo "📦 Releasing Chaosflix ${TAG}"
-echo "   Version:   ${VERSION_FOUR}"
+if (( DRY_RUN )); then
+    echo "🔍 Dry run — Chaosflix ${TAG}"
+else
+    echo "📦 Releasing Chaosflix ${TAG}"
+fi
+echo "   Version:   ${VERSION_FOUR} ($( (( INFERRED )) && echo "inferred from the commit history" || echo "given on the command line"))"
 echo "   targetAbi: ${TARGET_ABI}"
 echo "   ZIP:       ${ZIP_NAME}"
 if [[ -n "${MANUAL_CHANGELOG}" ]]; then
     echo "   Changelog: ${CHANGELOG} (given on the command line)"
 else
     echo "   Changelog: generated from the commits since ${PREV_TAG:-the first commit}"
+fi
+if (( DRY_RUN )); then
+    echo ""
+    echo "   Nothing was written: no version strings, no ${CHANGELOG_FILE}, no commit, no tag."
+    exit 0
 fi
 echo "   ✅ ${CHANGELOG_FILE}"
 echo "   ✅ ${NOTES_FILE}"

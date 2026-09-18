@@ -71,6 +71,21 @@ with open(sys.argv[1], "w") as f:
     f.write("\n")
 EOF
 
+PRISTINE="${WORK}/pristine"
+mkdir -p "${PRISTINE}/Jellyfin.Plugin.Chaosflix"
+cp "${SANDBOX}/Directory.Build.props" "${SANDBOX}/manifest.json" "${PRISTINE}/"
+cp "${SANDBOX}/Jellyfin.Plugin.Chaosflix/meta.json" "${PRISTINE}/Jellyfin.Plugin.Chaosflix/"
+
+# The version tests all start from the same 0.0.29 fixture, so each one can
+# state the number it expects instead of tracking what its predecessors wrote.
+reset_fixture() {
+    cp "${PRISTINE}/Directory.Build.props" "${PRISTINE}/manifest.json" "${SANDBOX}/"
+    cp "${PRISTINE}/Jellyfin.Plugin.Chaosflix/meta.json" \
+        "${SANDBOX}/Jellyfin.Plugin.Chaosflix/"
+    rm -f "${SANDBOX}/CHANGELOG.md" "${SANDBOX}"/release-notes-*.md \
+        "${SANDBOX}"/chaosflix-jellyfin-*.zip
+}
+
 # ── Stubs: no container build, no archiver, no VCS ───────
 
 cat > "${SANDBOX}/bin/docker" <<'EOF'
@@ -103,6 +118,11 @@ cat > "${SANDBOX}/bin/git" <<'EOF'
 case "$1" in
     describe)
         [[ -n "${FAKE_PREV_TAG:-}" ]] && echo "${FAKE_PREV_TAG}"
+        ;;
+    show)
+        # The tagged meta.json, reduced to the field release.sh reads from it.
+        [[ -n "${FAKE_PREV_ABI:-}" ]] \
+            && printf '{"version": "0.0.0.0", "targetAbi": "%s"}\n' "${FAKE_PREV_ABI}"
         ;;
     log)
         [[ -n "${FAKE_LOG:-}" && -s "${FAKE_LOG}" ]] && cat "${FAKE_LOG}"
@@ -217,6 +237,7 @@ run_release() {
     : > "${VCS_LOG}"
     (cd "${SANDBOX}" && PATH="${SANDBOX}/bin:${PATH}" VCS_LOG="${VCS_LOG}" \
         FAKE_LOG="${FAKE_LOG}" FAKE_PREV_TAG="${prev_tag}" \
+        FAKE_PREV_ABI="${FAKE_PREV_ABI:-}" \
         ./release.sh "$@") > "${WORK}/out.log" 2>&1
 }
 
@@ -373,6 +394,173 @@ check "the manual changelog reaches CHANGELOG.md" \
 MANUAL_SUBJECT=$(grep -P '^commit\t' "${VCS_LOG}" | head -1 | cut -f3)
 check "the manual changelog reaches the commit subject" \
     "${MANUAL_SUBJECT}" "release: v0.0.33 — Handwritten note"
+
+# ── The version is worked out from the history (#19) ─────
+
+released_version() {
+    python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    print(json.load(f)['version'], end='')
+" "${SANDBOX}/Jellyfin.Plugin.Chaosflix/meta.json"
+}
+
+fixture_state() {
+    md5sum "${SANDBOX}/manifest.json" "${SANDBOX}/Directory.Build.props" \
+        "${SANDBOX}/Jellyfin.Plugin.Chaosflix/meta.json"
+}
+
+FAKE_PREV_ABI=""
+
+echo "🧪 release.sh — the next version is inferred from the commits"
+
+reset_fixture
+log_reset
+log_entry aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "fix: repair one thing"
+log_entry bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb "fix: repair another thing"
+if ! run_release "v0.0.29"; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+check "a fix-only history bumps the patch" "$(released_version)" "0.0.30.0"
+check "the deciding rule is printed" \
+    "$(grep -c 'a fix → PATCH' "${WORK}/out.log" || true)" "1"
+check "the previous version is printed" \
+    "$(grep -c 'Previous version: 0.0.29' "${WORK}/out.log" || true)" "1"
+check "the counts per type are printed" \
+    "$(grep -c 'Commits since:    2 (fix: 2)' "${WORK}/out.log" || true)" "1"
+
+reset_fixture
+log_reset
+log_entry cccccccccccccccccccccccccccccccccccccccc "fix: repair one thing"
+log_entry dddddddddddddddddddddddddddddddddddddddd "feat: add a browsing filter"
+if ! run_release "v0.0.29"; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+check "a feat bumps the minor" "$(released_version)" "0.1.0.0"
+check "the feat rule is printed" \
+    "$(grep -c 'a feat → MINOR' "${WORK}/out.log" || true)" "1"
+
+reset_fixture
+log_reset
+log_entry eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee "feat!: drop the old config keys"
+if ! run_release "v0.0.29"; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+check "a breaking change stays below 1.0.0" "$(released_version)" "0.1.0.0"
+check "the degraded breaking rule is printed" \
+    "$(grep -c 'below 1.0.0 → MINOR' "${WORK}/out.log" || true)" "1"
+
+reset_fixture
+log_reset
+log_entry ffffffffffffffffffffffffffffffffffffffff "refactor: split the client" \
+    "BREAKING CHANGE: watch state is reset"
+if ! run_release "v0.0.29"; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+check "a BREAKING CHANGE trailer counts as breaking" "$(released_version)" "0.1.0.0"
+
+reset_fixture
+log_reset
+log_entry 1010101010101010101010101010101010101010 "chore: tidy the workflow"
+log_entry 2020202020202020202020202020202020202020 "docs: extend the README"
+if ! run_release "v0.0.29"; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+check "housekeeping alone bumps the patch" "$(released_version)" "0.0.30.0"
+check "housekeeping alone is called out" \
+    "$(grep -c 'nothing user-facing → PATCH' "${WORK}/out.log" || true)" "1"
+
+echo "🧪 release.sh — a raised targetAbi is a minor bump"
+reset_fixture
+sed -i 's|"targetAbi": "10.11.0.0"|"targetAbi": "10.12.0.0"|' \
+    "${SANDBOX}/Jellyfin.Plugin.Chaosflix/meta.json"
+log_reset
+log_entry 3030303030303030303030303030303030303030 "chore: raise the Jellyfin baseline"
+FAKE_PREV_ABI="10.11.0.0"
+if ! run_release "v0.0.29"; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+check "a raised targetAbi bumps the minor" "$(released_version)" "0.1.0.0"
+check "the targetAbi rule is printed" \
+    "$(grep -c 'targetAbi raised (10.11.0.0 → 10.12.0.0) → MINOR' "${WORK}/out.log" || true)" "1"
+FAKE_PREV_ABI=""
+
+echo "🧪 release.sh — an empty history aborts without touching anything"
+reset_fixture
+log_reset
+BEFORE=$(fixture_state)
+if run_release "v0.0.29"; then
+    fail "an empty history was released"
+else
+    pass "an empty history is rejected"
+fi
+check "no file was modified by the empty history" "$(fixture_state)" "${BEFORE}"
+if grep -q 'No commits since v0.0.29' "${WORK}/out.log"; then
+    pass "the abort names the tag it looked at"
+else
+    fail "the abort names the tag it looked at"
+fi
+if grep -qP '^(add|commit|tag)\t' "${VCS_LOG}"; then
+    fail "the aborted run touched the VCS"
+else
+    pass "the aborted run touched no VCS state"
+fi
+
+echo "🧪 release.sh — an explicit version still wins over the inferred one"
+reset_fixture
+log_reset
+log_entry 4040404040404040404040404040404040404040 "feat: would infer a minor bump"
+if ! run_release "v0.0.29" 0.0.40; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+check "the given version is used verbatim" "$(released_version)" "0.0.40.0"
+check "nothing is inferred when a version is given" \
+    "$(grep -c 'Working out the next version' "${WORK}/out.log" || true)" "0"
+
+echo "🧪 release.sh — --dry-run changes nothing"
+reset_fixture
+log_reset
+log_entry 5050505050505050505050505050505050505050 "feat: add a browsing filter"
+BEFORE=$(fixture_state)
+if ! run_release "v0.0.29" --dry-run; then
+    echo "   ❌ release.sh --dry-run exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+check "the dry run leaves every file untouched" "$(fixture_state)" "${BEFORE}"
+if [[ -e "${SANDBOX}/CHANGELOG.md" || -e "${SANDBOX}/release-notes-v0.1.0.md" ]]; then
+    fail "the dry run wrote the changelog or the notes"
+else
+    pass "the dry run wrote neither changelog nor notes"
+fi
+if grep -qP '^(add|commit|tag)\t' "${VCS_LOG}"; then
+    fail "the dry run touched the VCS"
+else
+    pass "the dry run touched no VCS state"
+fi
+check "the dry run prints the version it would release" \
+    "$(grep -c 'Dry run — Chaosflix v0.1.0' "${WORK}/out.log" || true)" "1"
+if grep -q 'add a browsing filter' "${WORK}/out.log"; then
+    pass "the dry run prints the notes it would write"
+else
+    fail "the dry run prints the notes it would write"
+fi
+
+reset_fixture
 
 # ── The files that are actually published ────────────────
 
