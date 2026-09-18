@@ -6,6 +6,8 @@ using Jellyfin.Plugin.Chaosflix.Configuration;
 using Jellyfin.Plugin.Chaosflix.Tests.Fakes;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Model.Channels;
 using MediaBrowser.Model.Dto;
@@ -302,6 +304,33 @@ public class ChaosflixChannelTests
         Assert.Equal(first.Id, second.Id);
     }
 
+    [Fact]
+    public async Task MediaSourceIdIsTheItemIdWhenTheLibraryKnowsIt()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"));
+        var itemId = Guid.Parse("11112222-3333-4444-5555-666677778888");
+        var library = Substitute.For<ILibraryManager>();
+        library.GetItemIds(Arg.Is<InternalItemsQuery>(q => q.ExternalId == "event:e1")).Returns(new[] { itemId });
+        var channel = Channel(library);
+
+        var source = Assert.Single(await channel.GetChannelItemMediaInfo("event:e1", CancellationToken.None));
+
+        Assert.Equal(itemId.ToString("N"), source.Id);
+    }
+
+    [Fact]
+    public async Task MediaSourceIdFallsBackWhenTheItemIsUnknown()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"));
+        var library = Substitute.For<ILibraryManager>();
+        library.GetItemIds(Arg.Any<InternalItemsQuery>()).Returns(Array.Empty<Guid>());
+        var channel = Channel(library);
+
+        var source = Assert.Single(await channel.GetChannelItemMediaInfo("event:e1", CancellationToken.None));
+
+        Assert.Equal(Assert.Single(await Sources("event:e1")).Id, source.Id);
+    }
+
     [Theory]
     [InlineData(VideoFormat.Mp4, VideoQuality.High, "", "h264-hd")]
     [InlineData(VideoFormat.Mp4, VideoQuality.Standard, "", "h264-sd")]
@@ -580,6 +609,14 @@ public class ChaosflixChannelTests
 
     private void EventWithRecordings(string guid, params CccRecording[] recordings) =>
         _api.Json($"/public/events/{guid}", Event(guid, recordings: recordings.ToList()));
+
+    private ChaosflixChannel Channel(ILibraryManager libraryManager)
+    {
+        var host = Substitute.For<IServerApplicationHost>();
+        host.GetSmartApiUrl(Arg.Any<string>()).Returns("http://jellyfin:8096/");
+        return new ChaosflixChannel(
+            _api.CreateApiClient(), NullLogger<ChaosflixChannel>.Instance, host, _encoder, _time, _mediaSourceCache, libraryManager);
+    }
 
     private Task<ChannelItemResult> Items(string? folderId) =>
         _channel.GetChannelItems(new InternalChannelItemQuery { FolderId = folderId }, CancellationToken.None);

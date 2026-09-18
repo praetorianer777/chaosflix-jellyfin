@@ -13,6 +13,8 @@ using Jellyfin.Plugin.Chaosflix.Api.Models;
 using Jellyfin.Plugin.Chaosflix.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Channels;
@@ -59,6 +61,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private readonly IMediaEncoder _mediaEncoder;
     private readonly TimeProvider _timeProvider;
     private readonly IMemoryCache? _mediaSourceCache;
+    private readonly ILibraryManager? _libraryManager;
     private readonly ConcurrentDictionary<string, ProbeCacheEntry> _probeCache = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _servedItemIds = new();
     private readonly Lock _subscriptionLock = new();
@@ -73,7 +76,8 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         IServerApplicationHost appHost,
         IMediaEncoder mediaEncoder,
         TimeProvider? timeProvider = null,
-        IMemoryCache? mediaSourceCache = null)
+        IMemoryCache? mediaSourceCache = null,
+        ILibraryManager? libraryManager = null)
     {
         _apiClient = apiClient;
         _logger = logger;
@@ -81,6 +85,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         _mediaEncoder = mediaEncoder;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _mediaSourceCache = mediaSourceCache;
+        _libraryManager = libraryManager;
     }
 
     /// <inheritdoc />
@@ -181,7 +186,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
         var serverUrl = _appHost.GetSmartApiUrl(string.Empty).TrimEnd('/');
-        return await SelectRecordingsAsync(cccEvent.Recordings, config, eventGuid, serverUrl, cancellationToken).ConfigureAwait(false);
+        return await SelectRecordingsAsync(cccEvent.Recordings, config, eventGuid, serverUrl, ResolveItemId(id), cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -531,6 +536,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         PluginConfiguration config,
         string eventGuid,
         string serverUrl,
+        Guid? itemId,
         CancellationToken cancellationToken)
     {
         var videoRecordings = recordings
@@ -591,7 +597,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         {
             new MediaSourceInfo
             {
-                Id = DeterministicGuid($"{bestRecording.RecordingUrl}").ToString("N"),
+                Id = (itemId ?? DeterministicGuid($"{bestRecording.RecordingUrl}")).ToString("N"),
                 Name = FormatRecordingName(bestRecording),
                 Path = proxyUrl,
                 Protocol = MediaProtocol.Http,
@@ -767,6 +773,37 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     [GeneratedRegex(@"^\d{4}c\d$|^\d{4}$")]
     private static partial Regex YearPattern();
+
+    /// <summary>
+    /// Looks up the Jellyfin item id behind a channel item's external id.
+    /// </summary>
+    /// <remarks>
+    /// The DTO of a channel item carries a placeholder media source whose id is the
+    /// item id, because Jellyfin only resolves the real sources in PlaybackInfo and
+    /// drops the placeholder there. jellyfin-androidtv takes that placeholder id from
+    /// the DTO and sends it back as MediaSourceId, so a source id of our own making
+    /// matches nothing, PlaybackInfo answers NoCompatibleStream and the app spins
+    /// forever without reporting anything (#55). Handing out the item id is also what
+    /// an ordinary library item does.
+    /// </remarks>
+    private Guid? ResolveItemId(string externalId)
+    {
+        if (_libraryManager is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var ids = _libraryManager.GetItemIds(new InternalItemsQuery { ExternalId = externalId, Limit = 1 });
+            return ids.Count > 0 ? ids[0] : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not resolve the item id for {ExternalId}", externalId);
+            return null;
+        }
+    }
 
     /// <summary>
     /// Creates a deterministic GUID from a string (MD5-based, namespace v3 style).
