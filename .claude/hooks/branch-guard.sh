@@ -124,7 +124,8 @@ case "$tool" in
         checkout|switch)
           created=0
           for ((j = 0; j < ${#args[@]}; j++)); do
-            if [[ "${args[j]}" =~ ^-(b|B|c|C)$ ]]; then
+            # A short-flag cluster counts too: -qc, -qb, --quiet -c, ...
+            if [[ "${args[j]}" =~ ^-[a-zA-Z]*[bBcC]$ ]]; then
               new="${args[j+1]:-}"
               valid "$new" || deny "Branch name '$new' is not allowed. $HINT"
               branch="$new"
