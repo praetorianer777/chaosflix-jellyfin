@@ -6,6 +6,7 @@ services:
     environment:
       MEDIA_DIR: /media
       FIXTURE_SECONDS: ${E2E_FIXTURE_SECONDS:-5}
+      FIXTURE_LONG_SECONDS: ${E2E_FIXTURE_LONG_SECONDS:-330}
     volumes:
       - ./fake-ccc:/srv:ro
       - ${E2E_ARTIFACTS_DIR:-./.artifacts}/media:/media:ro

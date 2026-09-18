@@ -95,6 +95,7 @@ Useful switches:
 | `JELLYFIN_PORT` | host port of the test server (default 8098) |
 | `JELLYFIN_ANDROID_VERSION` | APK release tag (default `v2.7.3`) |
 | `E2E_FIXTURE_SECONDS` | fixture length (default 180) |
+| `E2E_FIXTURE_LONG_SECONDS` | length of the long talk (default 330) |
 | `ANDROID_E2E_HOME` | where SDK, AVD, Maestro and APKs are cached |
 
 On failure a screenshot and the last 400 logcat lines land in
@@ -135,7 +136,15 @@ speed.
   uses; five seconds is not enough material to start a player, seek and observe
   a session through the UI. Both lengths come out of the same
   `build-artifacts.sh` via `E2E_FIXTURE_SECONDS`, and the fake CCC API reports
-  the matching duration through `FIXTURE_SECONDS`.
+  the matching duration through `FIXTURE_SECONDS`. The long talk the resume
+  tests need has a length of its own (`E2E_FIXTURE_LONG_SECONDS`, 330 s) and is
+  built for both stacks.
+- **Cross-client resume is not driven through ExoPlayer here.** It is covered at
+  the API level in `../tests/resume.spec.ts`, where the two clients differ by
+  DeviceId and device profile. Doing it in this suite needs the played talk to
+  clear Jellyfin's five minute resume threshold — the 180 s fixture does not —
+  and the seek in `flows/player-play-and-seek.yaml` deliberately lands close to
+  the end, which marks the talk watched instead of resumable (#31).
 - The suite drives one device, one API level (33) and one pinned app version. It
   is a regression net, not a compatibility matrix.
 - Audio is asserted through the server's view of the session (an audio stream

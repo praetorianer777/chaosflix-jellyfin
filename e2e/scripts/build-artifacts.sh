@@ -8,6 +8,10 @@ set -euo pipefail
 # E2E_ARTIFACTS_DIR   where to put them (default e2e/.artifacts)
 # E2E_FIXTURE_SECONDS length of the fixture videos (default 5); must match
 #                     FIXTURE_SECONDS handed to the fake CCC API.
+# E2E_FIXTURE_LONG_SECONDS
+#                     length of the single long fixture (default 330); must match
+#                     FIXTURE_LONG_SECONDS handed to the fake CCC API and stay
+#                     above Jellyfin's MinResumeDurationSeconds (300).
 
 cd "$(dirname "$0")/.."
 ROOT="$(cd .. && pwd)"
@@ -15,6 +19,7 @@ ARTIFACTS="${E2E_ARTIFACTS_DIR:-$(pwd)/.artifacts}"
 PLUGIN_DIR="$ARTIFACTS/plugin"
 MEDIA_DIR="$ARTIFACTS/media"
 SECONDS_PER_FIXTURE="${E2E_FIXTURE_SECONDS:-5}"
+LONG_FIXTURE_SECONDS="${E2E_FIXTURE_LONG_SECONDS:-330}"
 TFM=$(grep -oP '<TargetFramework>net\K[0-9.]+' "$ROOT/Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj")
 
 mkdir -p "$PLUGIN_DIR" "$MEDIA_DIR"
@@ -74,6 +79,21 @@ if [[ ! -f "$MEDIA_DIR/three-stream.mp4" || "$(cat "$STAMP" 2>/dev/null)" != "$S
     cp "$MEDIA_DIR/poster.png" "$MEDIA_DIR/thumb.png"
     cp "$MEDIA_DIR/poster.png" "$MEDIA_DIR/logo.png"
     echo "$SECONDS_PER_FIXTURE" > "$STAMP"
+fi
+
+# Built on its own and kept deliberately small (320x180 at 5 fps): the resume
+# tests need an item over Jellyfin's five minute threshold, not a watchable
+# picture, and lengthening every fixture instead would cost minutes per run.
+LONG_STAMP="$MEDIA_DIR/.long-length"
+if [[ ! -f "$MEDIA_DIR/long-talk.mp4" || "$(cat "$LONG_STAMP" 2>/dev/null)" != "$LONG_FIXTURE_SECONDS" ]]; then
+    echo "🎬 Generating the ${LONG_FIXTURE_SECONDS}s fixture video"
+    ffmpeg_run -y -loglevel error \
+        -f lavfi -i "testsrc=size=320x180:rate=5:duration=$LONG_FIXTURE_SECONDS" \
+        -f lavfi -i "sine=frequency=440:duration=$LONG_FIXTURE_SECONDS" \
+        -c:v libx264 -preset ultrafast -crf 34 -pix_fmt yuv420p \
+        -c:a aac -b:a 32k -movflags +faststart \
+        "$MEDIA_DIR/long-talk.mp4"
+    echo "$LONG_FIXTURE_SECONDS" > "$LONG_STAMP"
 fi
 
 echo "✅ Artifacts ready"
