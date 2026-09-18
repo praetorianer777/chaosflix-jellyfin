@@ -43,6 +43,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private const string PrefixRelated = "related:";
     private const string ScopePopular = "popular";
     private const string ScopeRecommended = "recommended";
+    private const string ConferenceScopePrefix = "conf-";
 
     internal const int ProbeCacheCapacity = 128;
 
@@ -54,6 +55,9 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     // the ids we handed out a little longer than that so a configuration change
     // can evict exactly those entries.
     internal static readonly TimeSpan ServedIdRetention = TimeSpan.FromMinutes(10);
+
+    /// <summary>How far the copies outside the conference folders are filed in the past; see <see cref="ScopedDateCreated"/>.</summary>
+    internal static readonly TimeSpan NonCanonicalBackdate = TimeSpan.FromDays(365 * 100);
 
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixChannel> _logger;
@@ -432,9 +436,11 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     // parent, so a talk listed in several folders under the same id is moved to
     // whichever folder was listed last and vanishes from the others (#15).
     // Every folder therefore hands out its own id for a talk.
-    private static string ConferenceScope(string acronym) => $"conf-{acronym}";
+    private static string ConferenceScope(string acronym) => $"{ConferenceScopePrefix}{acronym}";
 
     private static string RelatedScope(string eventGuid) => $"related-{eventGuid}";
+
+    private static bool IsConferenceScope(string scope) => scope.StartsWith(ConferenceScopePrefix, StringComparison.Ordinal);
 
     /// <summary>
     /// Reads the CCC event guid back out of a channel item id. Accepts the
@@ -464,6 +470,33 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     // ── Mapping ──────────────────────────────────────────
 
+    /// <summary>
+    /// The date a talk is filed under in its folder's copy. "Recently added in
+    /// Chaosflix" is a plain library query — measured on 10.11.7 and 12.1 it is
+    /// <c>/Users/{id}/Items/Latest?ParentId=&lt;channel&gt;</c> — so it lists every
+    /// folder-scoped copy of a talk (#54, #15). Backdating the copies outside the
+    /// conference folders keeps them out of any recency-sorted view while the
+    /// conference copy, the one <see cref="GetLatestMedia"/> also points at, stays
+    /// where it belongs. The shift is constant, so the order inside Popular,
+    /// Recommended and Related is untouched. A talk the API gives no date for is
+    /// filed at the very bottom instead: left empty, Jellyfin stamps the item
+    /// with the moment it was stored, which puts it at the top of the row.
+    /// </summary>
+    private static DateTime? ScopedDateCreated(DateTime? releasedAt, string scope)
+    {
+        if (IsConferenceScope(scope))
+        {
+            return releasedAt;
+        }
+
+        if (releasedAt is not DateTime date || date - DateTime.MinValue <= NonCanonicalBackdate)
+        {
+            return DateTime.MinValue;
+        }
+
+        return date - NonCanonicalBackdate;
+    }
+
     private static ChannelItemInfo MapEventToChannelItem(CccEvent e, string scope)
     {
         var info = new ChannelItemInfo
@@ -476,7 +509,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             ImageUrl = e.PosterUrl ?? e.ThumbUrl,
             Overview = BuildOverview(e),
             RunTimeTicks = (long)e.Duration * TimeSpan.TicksPerSecond,
-            DateCreated = e.Date?.DateTime ?? e.ReleaseDate?.DateTime,
+            DateCreated = ScopedDateCreated(e.Date?.DateTime ?? e.ReleaseDate?.DateTime, scope),
             CommunityRating = e.ViewCount > 0
                 ? Math.Min(10f, (float)Math.Log10(e.ViewCount) * 2)
                 : null,

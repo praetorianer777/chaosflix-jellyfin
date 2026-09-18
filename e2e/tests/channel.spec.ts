@@ -140,11 +140,45 @@ test.describe("browsing the channel", () => {
 		}
 	});
 
-	// #54, still open: a talk listed in several folders is stored once per
-	// folder, so it shows up several times in the library and in Recently Added.
-	// The folder scoping cannot simply be dropped — with one id per talk both
+	// #54: "Recently Added in Chaosflix" is fed by
+	// /Users/{id}/Items/Latest?ParentId=<channel> — measured on 10.11.7 and on
+	// 12.1 — which is a library query and therefore sees every folder-scoped
+	// copy of a talk. The copies outside the conference folders are filed a
+	// century in the past, so the row's window holds the conference copies only.
+	test("recently added lists each talk once", async () => {
+		const api = await apiContext();
+		const user = await userId(api);
+		const channel = await chaosflixChannelId(api);
+		const folders = await channelItems(api);
+		const byYear = folders.find((i) => i.Name.includes("Browse by Year"))!;
+		const years = await channelItems(api, byYear.Id);
+		const conferences = await channelItems(api, years[0].Id);
+		const conferenceTalks = await channelItems(api, conferences[0].Id);
+
+		for (const folder of [...folders, ...years, ...conferences]) {
+			await channelItems(api, folder.Id);
+		}
+		await runScheduledTask(api, "RefreshInternetChannels");
+
+		// A real library holds far more talks than the row shows; here the row is
+		// asked for exactly as many entries as there are talks.
+		const row = (await (
+			await api.get(
+				`/Users/${user}/Items/Latest?ParentId=${channel}&Limit=${conferenceTalks.length}`,
+			)
+		).json()) as Array<{ Id: string; Name: string }>;
+
+		expect(
+			row.map((i) => i.Id).sort(),
+			"the recently added row shows a copy from another folder",
+		).toEqual(conferenceTalks.map((t) => t.Id).sort());
+	});
+
+	// #54, the remaining half: the copies are still separate library items, so a
+	// query over the whole library lists a talk once per folder it was browsed
+	// in. The folder scoping cannot simply be dropped — with one id per talk both
 	// 10.11.7 and 12.1 move the item to the folder listed last and leave the
-	// others empty, which is #15 and is what the test above guards.
+	// others empty, which is #15 and is what the folder test above guards.
 	test.fixme("a talk listed in several folders exists once in the library", async () => {
 		const api = await apiContext();
 		const user = await userId(api);
@@ -159,9 +193,7 @@ test.describe("browsing the channel", () => {
 		await runScheduledTask(api, "RefreshInternetChannels");
 
 		const items = (
-			await (
-				await api.get(`/Items?userId=${user}&recursive=true`)
-			).json()
+			await (await api.get(`/Items?userId=${user}&recursive=true`)).json()
 		).Items as Array<{ Id: string; Name: string }>;
 
 		const talks = ["Long talk", "Three stream talk", "Two stream talk"];
