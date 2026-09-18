@@ -1,0 +1,91 @@
+name: Release
+
+# release.sh commits a manifest.json whose sourceUrl points at the release
+# asset, so the asset has to exist the moment the tag is pushed — otherwise
+# every server that has the repository added downloads a 404 (see #19).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # The annotated tag's own message is the fallback for the release notes,
+      # and it only arrives with the tag object itself.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Check the tag against meta.json
+        run: |
+          meta=$(python3 -c "import json;print(json.load(open('Jellyfin.Plugin.Chaosflix/meta.json'))['version'])")
+          tagged="${GITHUB_REF_NAME#v}"
+          if [[ "${meta%.*}" != "$tagged" ]]; then
+            echo "::warning::tag ${GITHUB_REF_NAME} does not match meta.json version ${meta}"
+          fi
+
+      # Same output as release.sh: publish to ./artifacts, drop meta.json next
+      # to the DLL, and zip exactly those two files flat.
+      - name: Build the plugin
+        run: |
+          dotnet publish Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj -c Release -o ./artifacts
+          cp Jellyfin.Plugin.Chaosflix/meta.json artifacts/
+
+      - name: Create the ZIP
+        id: zip
+        run: |
+          zip_name="chaosflix-jellyfin-${GITHUB_REF_NAME}.zip"
+          (cd artifacts && zip -j "../${zip_name}" Jellyfin.Plugin.Chaosflix.dll meta.json)
+          md5=$(md5sum "${zip_name}" | cut -d' ' -f1)
+          echo "name=${zip_name}" >> "$GITHUB_OUTPUT"
+          echo "md5=${md5}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### ${GITHUB_REF_NAME}"
+            echo
+            echo "- asset: \`${zip_name}\`"
+            echo "- md5: \`${md5}\` — must match \`checksum\` in manifest.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # release.sh writes release-notes-v<version>.md but .gitignore keeps it
+      # out of the commit, so in practice the tag message is what is used.
+      - name: Collect the release notes
+        id: notes
+        run: |
+          notes_file="release-notes-${GITHUB_REF_NAME}.md"
+          if [[ -s "${notes_file}" ]]; then
+            cp "${notes_file}" notes.md
+          else
+            git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > notes.md
+          fi
+          if [[ ! -s notes.md ]]; then
+            echo "Release ${GITHUB_REF_NAME}" > notes.md
+          fi
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" "${{ steps.zip.outputs.name }}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file notes.md

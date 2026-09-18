@@ -1,5 +1,7 @@
 # 📺 Chaosflix — CCC Media Plugin for Jellyfin
 
+[![CI](https://github.com/praetorianer777/chaosflix-jellyfin/actions/workflows/ci.yml/badge.svg)](https://github.com/praetorianer777/chaosflix-jellyfin/actions/workflows/ci.yml)
+
 Browse and stream **Chaos Computer Club** conference talks directly in Jellyfin.
 
 All content is sourced from [media.ccc.de](https://media.ccc.de) via their public API — no downloads, no local storage needed.
