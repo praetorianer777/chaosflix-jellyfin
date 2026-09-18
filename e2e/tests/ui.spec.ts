@@ -4,6 +4,7 @@ import {
 	channelItems,
 	chaosflixChannelId,
 	gotoAuthenticated,
+	gotoList,
 	loginUi,
 	playbackInfo,
 	serverId,
@@ -21,10 +22,7 @@ test.describe("web UI", () => {
 		const server = await serverId(api);
 		await loginUi(page);
 
-		await gotoAuthenticated(
-			page,
-			`/web/#/list?parentId=${channelId}&serverId=${server}`,
-		);
+		await gotoList(page, channelId, server);
 		await expect(page.getByText("📅 Browse by Year")).toBeVisible();
 
 		const byYear = (await channelItems(api)).find((i) =>
@@ -33,10 +31,7 @@ test.describe("web UI", () => {
 		const years = await channelItems(api, byYear.Id);
 		const conferences = await channelItems(api, years[0].Id);
 
-		await gotoAuthenticated(
-			page,
-			`/web/#/list?parentId=${conferences[0].Id}&serverId=${server}`,
-		);
+		await gotoList(page, conferences[0].Id, server);
 		await expect(page.getByText("Three stream talk")).toBeVisible();
 		await expect(page.getByText("Two stream talk")).toBeVisible();
 	});

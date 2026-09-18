@@ -232,6 +232,27 @@ export async function loginUi(page: Page): Promise<void> {
 }
 
 /**
+ * Opens a channel folder in the client's list view and waits until its cards
+ * are on the page. The view renders them after the route itself, and a hash
+ * route occasionally leaves the list empty, so the navigation is retried.
+ */
+export async function gotoList(page: Page, parentId: string, server: string): Promise<void> {
+	const cards = page.locator(".card, .listItem");
+
+	for (let attempt = 0; attempt < 3; attempt++) {
+		await gotoAuthenticated(page, `/web/#/list?parentId=${parentId}&serverId=${server}`);
+		try {
+			await expect(cards.first()).toBeVisible({ timeout: 20_000 });
+			return;
+		} catch {
+			await page.reload();
+		}
+	}
+
+	throw new Error(`list view for ${parentId} stayed empty`);
+}
+
+/**
  * Navigates inside the web client. Right after signing in the client can bounce
  * back to the login route while it is still connecting, so the navigation is
  * retried until the login form is gone.
