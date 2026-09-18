@@ -46,6 +46,26 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     internal const int ProbeCacheCapacity = 128;
 
+    // A talk on media.ccc.de has a handful of recordings; the cap only keeps a
+    // pathological one from filling a version list nobody can read.
+    internal const int MaxSelectableSources = 8;
+
+    private static readonly Dictionary<string, string> LanguageNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["deu"] = "Deutsch",
+        ["ger"] = "Deutsch",
+        ["de"] = "Deutsch",
+        ["eng"] = "English",
+        ["en"] = "English",
+        ["fra"] = "Français",
+        ["fre"] = "Français",
+        ["fr"] = "Français",
+        ["spa"] = "Español",
+        ["nld"] = "Nederlands",
+        ["dut"] = "Nederlands",
+        ["gsw"] = "Schwyzerdütsch"
+    };
+
     internal static readonly TimeSpan ProbeCacheTtl = TimeSpan.FromHours(6);
 
     // Jellyfin's ChannelManager keeps what GetChannelItemMediaInfo returned in
@@ -563,9 +583,84 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             return new List<MediaSourceInfo>();
         }
 
+        // Every usable recording becomes a source so a viewer can pick another
+        // quality or language per device; the configuration decides the order,
+        // and Jellyfin plays the first one unless the viewer says otherwise.
+        var ranked = RankRecordings(videoRecordings, config).Take(MaxSelectableSources).ToList();
+        var names = SourceNames(ranked);
+        var sources = new List<MediaSourceInfo>(ranked.Count);
+
+        for (var i = 0; i < ranked.Count; i++)
+        {
+            var recording = ranked[i];
+
+            // Signed so the proxy only serves recordings this plugin picked (#2).
+            var signature = ProxySignature.Create(eventGuid, recording.Folder, recording.Language);
+
+            var proxyUrl = $"{serverUrl}/api/ChaosflixStream/proxy/{eventGuid}"
+                + $"?recordingFolder={Uri.EscapeDataString(recording.Folder)}"
+                + $"&language={Uri.EscapeDataString(recording.Language)}"
+                + $"&{ProxySignature.QueryParameter}={signature}";
+
+            // Probe the actual file to discover the real stream layout.
+            // CCC MP4s vary: some have 2 streams (video+audio), some have 3
+            // (video+video[visual impaired]+audio). We must declare the correct
+            // indices so the server generates proper ffmpeg -map flags.
+            // Keyed by the recording that is actually probed, not by the event: which
+            // recording wins depends on the configuration, and a configuration change
+            // must not hand out the stream layout of the previously chosen file (#3).
+            var cacheKey = $"{eventGuid}|{recording.Folder}|{recording.Language}";
+
+            // Only the preferred recording is probed, and only it declares a
+            // stream layout. Two reasons: probing every recording of every talk
+            // someone opens would multiply the upstream reads by the number of
+            // versions, and Jellyfin re-sorts the sources by the width of their
+            // first video stream (MediaSourceManager.SortMediaSources), so a
+            // version that declared its layout would overtake the preferred one
+            // whenever it is the larger file. Sources without streams keep the
+            // order they are handed over in, and ffmpeg maps their streams
+            // itself when one of them is played.
+            var mediaStreams = i == 0
+                ? await ProbeMediaStreamsAsync(proxyUrl, cacheKey, cancellationToken).ConfigureAwait(false)
+                : new List<MediaStream>();
+
+            var audioStream = mediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Audio);
+
+            sources.Add(new MediaSourceInfo
+            {
+                // The first source keeps the item id: that is the id the DTO
+                // carries and jellyfin-androidtv echoes back (#55).
+                Id = (i == 0
+                    ? itemId ?? DeterministicGuid($"{recording.RecordingUrl}")
+                    : DeterministicGuid($"{recording.RecordingUrl}|{recording.Folder}|{recording.Language}"))
+                    .ToString("N"),
+                Name = names[i],
+                Path = proxyUrl,
+                Protocol = MediaProtocol.Http,
+                Container = DetectContainer(recording),
+                Size = (long)recording.Size * 1024 * 1024,
+                RunTimeTicks = (long)recording.Length * TimeSpan.TicksPerSecond,
+                Bitrate = recording.Length > 0 ? (int)((long)recording.Size * 1024 * 1024 * 8 / recording.Length) : null,
+                VideoType = VideoType.VideoFile,
+                DefaultAudioStreamIndex = audioStream?.Index,
+                IsRemote = false,
+                ReadAtNativeFramerate = false,
+                SupportsProbing = false,
+                SupportsDirectPlay = false,
+                SupportsDirectStream = true,
+                SupportsTranscoding = true,
+                MediaStreams = mediaStreams
+            });
+        }
+
+        return sources;
+    }
+
+    private static List<CccRecording> RankRecordings(List<CccRecording> videoRecordings, PluginConfiguration config)
+    {
         var preferredMime = config.PreferredFormat == VideoFormat.WebM ? "video/webm" : "video/mp4";
 
-        var sorted = videoRecordings
+        return videoRecordings
             .OrderByDescending(r =>
             {
                 if (IsAv1(r)) return -1;
@@ -585,54 +680,6 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             })
             .ThenByDescending(r => r.Width)
             .ToList();
-
-        var bestRecording = sorted[0];
-
-        // Signed so the proxy only serves recordings this plugin picked (#2).
-        var signature = ProxySignature.Create(eventGuid, bestRecording.Folder, bestRecording.Language);
-
-        var proxyUrl = $"{serverUrl}/api/ChaosflixStream/proxy/{eventGuid}"
-            + $"?recordingFolder={Uri.EscapeDataString(bestRecording.Folder)}"
-            + $"&language={Uri.EscapeDataString(bestRecording.Language)}"
-            + $"&{ProxySignature.QueryParameter}={signature}";
-
-        // Probe the actual file to discover the real stream layout.
-        // CCC MP4s vary: some have 2 streams (video+audio), some have 3
-        // (video+video[visual impaired]+audio). We must declare the correct
-        // indices so the server generates proper ffmpeg -map flags.
-        // Keyed by the recording that is actually probed, not by the event: which
-        // recording wins depends on the configuration, and a configuration change
-        // must not hand out the stream layout of the previously chosen file (#3).
-        var cacheKey = $"{eventGuid}|{bestRecording.Folder}|{bestRecording.Language}";
-
-        var mediaStreams = await ProbeMediaStreamsAsync(proxyUrl, cacheKey, cancellationToken).ConfigureAwait(false);
-        var audioStream = mediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Audio);
-
-        var result = new List<MediaSourceInfo>
-        {
-            new MediaSourceInfo
-            {
-                Id = (itemId ?? DeterministicGuid($"{bestRecording.RecordingUrl}")).ToString("N"),
-                Name = FormatRecordingName(bestRecording),
-                Path = proxyUrl,
-                Protocol = MediaProtocol.Http,
-                Container = DetectContainer(bestRecording),
-                Size = (long)bestRecording.Size * 1024 * 1024,
-                RunTimeTicks = (long)bestRecording.Length * TimeSpan.TicksPerSecond,
-                Bitrate = bestRecording.Length > 0 ? (int)((long)bestRecording.Size * 1024 * 1024 * 8 / bestRecording.Length) : null,
-                VideoType = VideoType.VideoFile,
-                DefaultAudioStreamIndex = audioStream?.Index,
-                IsRemote = false,
-                ReadAtNativeFramerate = false,
-                SupportsProbing = false,
-                SupportsDirectPlay = false,
-                SupportsDirectStream = true,
-                SupportsTranscoding = true,
-                MediaStreams = mediaStreams
-            }
-        };
-
-        return result;
     }
 
     private async Task<List<MediaStream>> ProbeMediaStreamsAsync(
@@ -778,12 +825,49 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private static string DetectAudioCodec(CccRecording r) =>
         r.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? "aac" : "opus";
 
+    /// <summary>
+    /// Names the sources of one talk, e.g. "HD MP4 · Deutsch". Versions that
+    /// would share a name — the same format and language in two resolutions —
+    /// are told apart by their resolution.
+    /// </summary>
+    private static List<string> SourceNames(IReadOnlyList<CccRecording> ranked)
+    {
+        var names = ranked.Select(FormatRecordingName).ToList();
+
+        return names
+            .Select((name, i) => names.Count(other => string.Equals(other, name, StringComparison.Ordinal)) > 1
+                ? $"{name} ({FormatResolution(ranked[i])})"
+                : name)
+            .ToList();
+    }
+
     private static string FormatRecordingName(CccRecording r)
     {
         var quality = r.HighQuality ? "HD" : "SD";
-        var resolution = r.Height > 0 ? $"{r.Width}x{r.Height}" : "?";
-        var format = IsAv1(r) ? "AV1" : DetectContainer(r).ToUpperInvariant();
-        return $"{quality} {resolution} ({format}) [{r.Language}]";
+        var format = IsAv1(r) ? "AV1" : DetectContainer(r) == "mp4" ? "MP4" : "WebM";
+        return $"{quality} {format} · {FormatLanguage(r.Language)}";
+    }
+
+    private static string FormatResolution(CccRecording r) =>
+        r.Height > 0 ? $"{r.Width}x{r.Height}" : $"{r.Width}p";
+
+    /// <summary>
+    /// Turns a CCC language tag into what a viewer picking a version reads.
+    /// The tag is an ISO 639-2 code, or several joined by "-" when the
+    /// recording carries a translation next to the original.
+    /// </summary>
+    private static string FormatLanguage(string language)
+    {
+        if (string.IsNullOrWhiteSpace(language))
+        {
+            return "Original";
+        }
+
+        var parts = language
+            .Split('-', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => LanguageNames.TryGetValue(part, out var name) ? name : part.ToUpperInvariant());
+
+        return string.Join(" + ", parts);
     }
 
     [GeneratedRegex(@"^\d{4}c\d$|^\d{4}$")]

@@ -76,6 +76,11 @@ const EVENTS = [
 				highQuality: false,
 				width: 1024,
 			}),
+			// media.ccc.de publishes a translation as a recording of its own, so
+			// picking another language means picking another version (#69).
+			recording("h264-hd-translated", "video/mp4", "two-stream.mp4", {
+				language: "eng",
+			}),
 		],
 		related: [{ event_guid: "e2e-0000-0000-0000-000000000002", weight: 9 }],
 	},
