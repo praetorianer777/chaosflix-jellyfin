@@ -399,3 +399,74 @@ export async function gotoAuthenticated(
 		`web client kept redirecting to the login page instead of ${route}`,
 	);
 }
+
+export type PlaySession = {
+	ItemId: string;
+	MediaSourceId: string;
+	PlaySessionId: string;
+	CanSeek: boolean;
+};
+
+/** Reports playback of an item the way a client does, from a position. */
+export async function openSession(
+	api: APIRequestContext,
+	itemId: string,
+	deviceProfile: { MaxStreamingBitrate: number },
+	fromTicks: number,
+): Promise<PlaySession> {
+	const source = await playbackInfo(api, itemId, deviceProfile);
+	const session = {
+		ItemId: itemId,
+		MediaSourceId: source.Id,
+		PlaySessionId: source.PlaySessionId,
+		CanSeek: true,
+	};
+	const started = await api.post("/Sessions/Playing", {
+		data: { ...session, PositionTicks: fromTicks },
+	});
+	expect(started.ok(), `reporting playback start: ${started.status()}`).toBe(
+		true,
+	);
+	return session;
+}
+
+export async function playUntil(
+	api: APIRequestContext,
+	session: PlaySession,
+	positionTicks: number,
+): Promise<void> {
+	await api.post("/Sessions/Playing/Progress", {
+		data: { ...session, PositionTicks: positionTicks, IsPaused: false },
+	});
+	await api.post("/Sessions/Playing/Stopped", {
+		data: { ...session, PositionTicks: positionTicks },
+	});
+}
+
+export async function userData(
+	api: APIRequestContext,
+	itemId: string,
+): Promise<{ PlaybackPositionTicks?: number; Played?: boolean }> {
+	const item = await (
+		await api.get(`/Users/${await userId(api)}/Items/${itemId}`)
+	).json();
+	return item.UserData ?? {};
+}
+
+export async function resumePosition(
+	api: APIRequestContext,
+	itemId: string,
+): Promise<number | undefined> {
+	return (await userData(api, itemId)).PlaybackPositionTicks;
+}
+
+/** Drops played state and resume position, the way "mark unwatched" does. */
+export async function clearWatchState(
+	api: APIRequestContext,
+	itemId: string,
+): Promise<void> {
+	const response = await api.delete(
+		`/UserPlayedItems/${itemId}?userId=${await userId(api)}`,
+	);
+	expect(response.ok(), "clearing the watch state failed").toBe(true);
+}

@@ -23,5 +23,6 @@ public class ChaosflixServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddSingleton<CccApiClient>();
         serviceCollection.AddSingleton<IChannel, ChaosflixChannel>();
+        serviceCollection.AddHostedService<ChaosflixUserDataMirror>();
     }
 }
