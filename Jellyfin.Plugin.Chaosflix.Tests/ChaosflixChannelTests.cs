@@ -8,8 +8,10 @@ using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Model.Channels;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -23,19 +25,21 @@ public class ChaosflixChannelTests
     private readonly FakeCccApi _api = new();
     private readonly IMediaEncoder _encoder = Substitute.For<IMediaEncoder>();
     private readonly FakeTime _time = new();
+    private readonly MemoryCache _mediaSourceCache = new(new MemoryCacheOptions());
+    private readonly Plugin _plugin;
     private readonly ChaosflixChannel _channel;
 
     public ChaosflixChannelTests()
     {
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
-        TestPlugin.Configure();
+        _plugin = TestPlugin.Configure();
 
         var host = Substitute.For<IServerApplicationHost>();
         host.GetSmartApiUrl(Arg.Any<string>()).Returns("http://jellyfin:8096/");
         _encoder.GetMediaInfo(Arg.Any<MediaInfoRequest>(), Arg.Any<CancellationToken>())
             .Returns(new MediaInfo { MediaStreams = Streams(MediaStreamType.Video, MediaStreamType.Audio) });
 
-        _channel = new ChaosflixChannel(_api.CreateApiClient(), NullLogger<ChaosflixChannel>.Instance, host, _encoder, _time);
+        _channel = new ChaosflixChannel(_api.CreateApiClient(), NullLogger<ChaosflixChannel>.Instance, host, _encoder, _time, _mediaSourceCache);
     }
 
     [Fact]
@@ -513,6 +517,48 @@ public class ChaosflixChannelTests
             Arg.Is<MediaInfoRequest>(r => r.MediaSource.Path.StartsWith("http://jellyfin:8096/api/ChaosflixStream/proxy/e1?", StringComparison.Ordinal)),
             Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task ConfigurationChangeDropsTheMediaSourcesJellyfinCached()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"));
+        await Sources("event:conf-c:e1");
+        CacheAsChannelManagerWould("event:conf-c:e1");
+
+        _plugin.UpdateConfiguration(new PluginConfiguration { PreferredFormat = VideoFormat.WebM });
+
+        Assert.False(_mediaSourceCache.TryGetValue("event:conf-c:e1", out _));
+    }
+
+    [Fact]
+    public async Task ConfigurationChangeLeavesCacheEntriesOfOtherPluginsAlone()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"));
+        await Sources("event:conf-c:e1");
+        CacheAsChannelManagerWould("someone-elses-key");
+
+        _plugin.UpdateConfiguration(new PluginConfiguration { PreferredFormat = VideoFormat.WebM });
+
+        Assert.True(_mediaSourceCache.TryGetValue("someone-elses-key", out _));
+    }
+
+    [Fact]
+    public async Task ConfigurationChangeIgnoresTalksWhoseCacheEntryHasLongExpired()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"));
+        await Sources("event:conf-c:e1");
+        _time.Advance(ChaosflixChannel.ServedIdRetention + TimeSpan.FromMinutes(1));
+        EventWithRecordings("e2", Recording("h264-hd"));
+        await Sources("event:conf-c:e2");
+        CacheAsChannelManagerWould("event:conf-c:e1");
+
+        _plugin.UpdateConfiguration(new PluginConfiguration { PreferredFormat = VideoFormat.WebM });
+
+        Assert.True(_mediaSourceCache.TryGetValue("event:conf-c:e1", out _));
+    }
+
+    private void CacheAsChannelManagerWould(string id) =>
+        _mediaSourceCache.Set(id, new List<MediaSourceInfo>(), DateTimeOffset.UtcNow.AddMinutes(5));
 
     private sealed class FakeTime : TimeProvider
     {

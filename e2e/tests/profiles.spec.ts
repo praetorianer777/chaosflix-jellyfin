@@ -13,9 +13,9 @@ import {
 // Jellyfin derives what it does with a stream from the client's device
 // profile, so asking it with each client shape turns that flip-flop into a
 // failing test within seconds — no Chromecast or phone needed (#34).
-// All of these use "Three stream talk": the first media source Jellyfin hands
-// out for a talk is the one it keeps (#36), so asking for MP4 here would pin
-// the talk the browser playback test needs as WebM.
+// All of these use "Three stream talk". Jellyfin caches the media sources it
+// got for a talk, but the channel drops that cache when the configuration
+// changes (#36), so switching the format below reaches this talk too.
 test.describe("client profiles", () => {
 	test.afterAll(async () => {
 		await setPluginConfig(await apiContext(), { PreferredFormat: "Mp4" });
@@ -74,9 +74,7 @@ test.describe("client profiles", () => {
 		expect(codecReasons(source)).toContain("VideoCodecNotSupported");
 	});
 
-	// Blocked by #36: a format change does not reach talks Jellyfin already
-	// knows, so these two describe the behaviour we want, not what happens.
-	test.fixme("that same browser gets WebM untouched once the format is switched", async () => {
+	test("that same browser gets WebM untouched once the format is switched", async () => {
 		const api = await apiContext();
 		await setPluginConfig(api, { PreferredFormat: "WebM" });
 		const talk = await talkNamed(api, "Three stream talk");
@@ -87,7 +85,7 @@ test.describe("client profiles", () => {
 		expect(codecReasons(source)).toEqual([]);
 	});
 
-	test.fixme("switching the format does not disturb the other clients", async () => {
+	test("switching the format does not disturb the other clients", async () => {
 		const api = await apiContext();
 		await setPluginConfig(api, { PreferredFormat: "WebM" });
 		const talk = await talkNamed(api, "Three stream talk");

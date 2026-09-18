@@ -21,6 +21,8 @@ using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
+using MediaBrowser.Model.Plugins;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Chaosflix.Channel;
@@ -44,12 +46,23 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     internal static readonly TimeSpan ProbeCacheTtl = TimeSpan.FromHours(6);
 
+    // Jellyfin's ChannelManager keeps what GetChannelItemMediaInfo returned in
+    // the shared IMemoryCache under the plain channel item id for five minutes
+    // and nothing — not even a full metadata refresh — drops it (#36). We keep
+    // the ids we handed out a little longer than that so a configuration change
+    // can evict exactly those entries.
+    internal static readonly TimeSpan ServedIdRetention = TimeSpan.FromMinutes(10);
+
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixChannel> _logger;
     private readonly IServerApplicationHost _appHost;
     private readonly IMediaEncoder _mediaEncoder;
     private readonly TimeProvider _timeProvider;
+    private readonly IMemoryCache? _mediaSourceCache;
     private readonly ConcurrentDictionary<string, ProbeCacheEntry> _probeCache = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _servedItemIds = new();
+    private readonly Lock _subscriptionLock = new();
+    private Plugin? _subscribedPlugin;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ChaosflixChannel"/> class.
@@ -59,13 +72,15 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         ILogger<ChaosflixChannel> logger,
         IServerApplicationHost appHost,
         IMediaEncoder mediaEncoder,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IMemoryCache? mediaSourceCache = null)
     {
         _apiClient = apiClient;
         _logger = logger;
         _appHost = appHost;
         _mediaEncoder = mediaEncoder;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _mediaSourceCache = mediaSourceCache;
     }
 
     /// <inheritdoc />
@@ -152,6 +167,9 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     public async Task<IEnumerable<MediaSourceInfo>> GetChannelItemMediaInfo(string id, CancellationToken cancellationToken)
     {
         _logger.LogDebug("GetChannelItemMediaInfo: {Id}", id);
+
+        SubscribeToConfigurationChanges();
+        RememberServedId(id);
 
         var eventGuid = ExtractEventGuid(id);
         var cccEvent = await _apiClient.GetEventAsync(eventGuid, cancellationToken).ConfigureAwait(false);
@@ -650,6 +668,68 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             if (oldest is null || !_probeCache.TryRemove(oldest, out _))
             {
                 break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Drops the media sources Jellyfin cached for every talk this channel has
+    /// served, so the next request is answered with the current configuration.
+    /// </summary>
+    internal void InvalidateCachedMediaSources()
+    {
+        var count = 0;
+        foreach (var id in _servedItemIds.Keys)
+        {
+            _servedItemIds.TryRemove(id, out _);
+            _mediaSourceCache?.Remove(id);
+            count++;
+        }
+
+        _logger.LogInformation("Configuration changed, dropped {Count} cached media sources", count);
+    }
+
+    // The channel is constructed by DI, which may happen before the plugin
+    // instance exists; subscribing on first use is both late enough to find it
+    // and early enough, because nothing is cached before this call.
+    private void SubscribeToConfigurationChanges()
+    {
+        var plugin = Plugin.Instance;
+        if (plugin is null || ReferenceEquals(plugin, _subscribedPlugin))
+        {
+            return;
+        }
+
+        lock (_subscriptionLock)
+        {
+            if (ReferenceEquals(plugin, _subscribedPlugin))
+            {
+                return;
+            }
+
+            if (_subscribedPlugin is not null)
+            {
+                _subscribedPlugin.ConfigurationChanged -= OnConfigurationChanged;
+            }
+
+            plugin.ConfigurationChanged += OnConfigurationChanged;
+            _subscribedPlugin = plugin;
+        }
+    }
+
+    private void OnConfigurationChanged(object? sender, BasePluginConfiguration configuration)
+        => InvalidateCachedMediaSources();
+
+    private void RememberServedId(string id)
+    {
+        var now = _timeProvider.GetUtcNow();
+        _servedItemIds[id] = now.Add(ServedIdRetention);
+
+        foreach (var entry in _servedItemIds)
+        {
+            if (entry.Value <= now)
+            {
+                _servedItemIds.TryRemove(entry.Key, out _);
             }
         }
     }
