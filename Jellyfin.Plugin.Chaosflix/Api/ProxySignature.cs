@@ -27,11 +27,11 @@ public static class ProxySignature
     /// Signs one recording. The signature covers exactly the parameters the
     /// controller acts on, so none of them can be swapped afterwards.
     /// </summary>
-    public static string Create(string eventGuid, string? recordingFolder, string? language)
+    public static string Create(string eventGuid, string? recordingFolder, string? language, string? filename = null)
     {
         var payload = string.Create(
             CultureInfo.InvariantCulture,
-            $"{eventGuid}\n{recordingFolder ?? string.Empty}\n{language ?? string.Empty}");
+            $"{eventGuid}\n{recordingFolder ?? string.Empty}\n{language ?? string.Empty}\n{filename ?? string.Empty}");
 
         var hash = HMACSHA256.HashData(Encoding.UTF8.GetBytes(Secret), Encoding.UTF8.GetBytes(payload));
         return Convert.ToHexStringLower(hash);
@@ -40,14 +40,14 @@ public static class ProxySignature
     /// <summary>
     /// Verifies a signature in constant time.
     /// </summary>
-    public static bool Verify(string eventGuid, string? recordingFolder, string? language, string? signature)
+    public static bool Verify(string eventGuid, string? recordingFolder, string? language, string? signature, string? filename = null)
     {
         if (string.IsNullOrEmpty(signature))
         {
             return false;
         }
 
-        var expected = Create(eventGuid, recordingFolder, language);
+        var expected = Create(eventGuid, recordingFolder, language, filename);
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(expected),
             Encoding.UTF8.GetBytes(signature));

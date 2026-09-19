@@ -81,6 +81,13 @@ if [[ ! -f "$MEDIA_DIR/three-stream.mp4" || "$(cat "$STAMP" 2>/dev/null)" != "$S
     echo "$SECONDS_PER_FIXTURE" > "$STAMP"
 fi
 
+# Subtitles for the one talk that has them, in the two formats media.ccc.de
+# publishes. Costless to rewrite, so they stay outside the video cache guard.
+printf 'WEBVTT\n\n00:00:00.000 --> 00:00:04.000\nEnglish captions for the three stream talk.\n' \
+    > "$MEDIA_DIR/captions.eng.vtt"
+printf '1\n00:00:00,000 --> 00:00:04,000\nSuomenkieliset tekstitykset.\n' \
+    > "$MEDIA_DIR/captions.fin.srt"
+
 # Built on its own and kept deliberately small (320x180 at 5 fps): the resume
 # tests need an item over Jellyfin's five minute threshold, not a watchable
 # picture, and lengthening every fixture instead would cost minutes per run.

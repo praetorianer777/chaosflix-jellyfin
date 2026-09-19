@@ -146,6 +146,28 @@ public class CccApiClientTests
         Assert.Equal(url, await client.ResolveRedirectAsync(url, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task SubtitleRecordingWithoutSizeOrLengthIsParsed()
+    {
+        // Verbatim from api.media.ccc.de: a subtitle recording carries null where a
+        // video carries numbers, which a non-nullable int would refuse outright and
+        // take the whole talk down with it.
+        _api.Json("/public/events/e1", JsonDocumentFrom("""
+            {"guid":"e1","title":"Talk","recordings":[
+              {"length":null,"mime_type":"application/x-subrip","language":"fin",
+               "filename":"talk.fi.srt","state":"translated","folder":"","high_quality":true,
+               "width":null,"height":null,"size":null,
+               "recording_url":"https://cdn.media.ccc.de/congress/2024/talk.fi.srt"}]}
+            """).RootElement);
+
+        var recording = Assert.Single((await _api.CreateApiClient().GetEventAsync("e1", CancellationToken.None))!.Recordings!);
+
+        Assert.Null(recording.Size);
+        Assert.Null(recording.Length);
+        Assert.Null(recording.Width);
+        Assert.Equal("translated", recording.State);
+    }
+
     private static System.Text.Json.JsonDocument JsonDocumentFrom(string json) =>
         System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetBytes(json));
 }

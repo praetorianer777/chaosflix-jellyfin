@@ -8,15 +8,16 @@ namespace Jellyfin.Plugin.Chaosflix.Api.Models;
 /// </summary>
 public class CccRecording
 {
-    /// <summary>Gets or sets the file size in MB.</summary>
+    /// <summary>
+    /// Gets or sets the file size in MB. Null on subtitle recordings, which the
+    /// API publishes without size, length or dimensions.
+    /// </summary>
     [JsonPropertyName("size")]
-    [JsonConverter(typeof(NullableToZeroInt32Converter))]
-    public int Size { get; set; }
+    public int? Size { get; set; }
 
-    /// <summary>Gets or sets the length in seconds.</summary>
+    /// <summary>Gets or sets the length in seconds; null on subtitle recordings.</summary>
     [JsonPropertyName("length")]
-    [JsonConverter(typeof(NullableToZeroInt32Converter))]
-    public int Length { get; set; }
+    public int? Length { get; set; }
 
     /// <summary>Gets or sets the MIME type.</summary>
     [JsonPropertyName("mime_type")]
@@ -42,15 +43,13 @@ public class CccRecording
     [JsonPropertyName("high_quality")]
     public bool HighQuality { get; set; }
 
-    /// <summary>Gets or sets the width.</summary>
+    /// <summary>Gets or sets the width; null on subtitle recordings.</summary>
     [JsonPropertyName("width")]
-    [JsonConverter(typeof(NullableToZeroInt32Converter))]
-    public int Width { get; set; }
+    public int? Width { get; set; }
 
-    /// <summary>Gets or sets the height.</summary>
+    /// <summary>Gets or sets the height; null on subtitle recordings.</summary>
     [JsonPropertyName("height")]
-    [JsonConverter(typeof(NullableToZeroInt32Converter))]
-    public int Height { get; set; }
+    public int? Height { get; set; }
 
     /// <summary>Gets or sets the direct recording URL.</summary>
     [JsonPropertyName("recording_url")]

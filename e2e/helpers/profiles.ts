@@ -54,7 +54,14 @@ const profile = (
 	})),
 	TranscodingProfiles: transcoding.map((t) => transcodingProfile(...t)),
 	CodecProfiles: [],
-	SubtitleProfiles: [],
+	// Every real client lists the text formats it can fetch beside the video;
+	// without them the server assumes it has to burn captions into the picture
+	// and re-encodes a talk that carries subtitles (#70).
+	SubtitleProfiles: [
+		{ Format: "vtt", Method: "External" },
+		{ Format: "srt", Method: "External" },
+		{ Format: "ass", Method: "External" },
+	],
 	MaxStreamingBitrate: 120_000_000,
 });
 

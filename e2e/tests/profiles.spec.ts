@@ -53,11 +53,11 @@ test.describe("client profiles", () => {
 
 		// The extra video stream for the visually impaired pushes audio to 2;
 		// getting this wrong is what silenced playback in v0.0.28.
-		expect(source.MediaStreams.map((s) => `${s.Type}@${s.Index}`)).toEqual([
-			"Video@0",
-			"Video@1",
-			"Audio@2",
-		]);
+		expect(
+			source.MediaStreams.filter((s) => s.Type !== "Subtitle").map(
+				(s) => `${s.Type}@${s.Index}`,
+			),
+		).toEqual(["Video@0", "Video@1", "Audio@2"]);
 		expect(source.DefaultAudioStreamIndex).toBe(2);
 		expect(codecReasons(source)).toEqual([]);
 	});
@@ -154,12 +154,15 @@ test.describe("selectable versions", () => {
 		}
 		// The first one is still what a client that never asks gets, and it is
 		// the only one that costs a probe: the others are described by what the
-		// API says about them until they are preferred themselves.
+		// API says about them until they are preferred themselves. Subtitles are
+		// files of their own and come with every version (#70).
 		expect(body.MediaSources[0].Container).toBe("mp4");
 		expect(codecReasons(body.MediaSources[0])).toEqual([]);
-		expect(body.MediaSources[0].MediaStreams).toHaveLength(3);
+		const decoded = (source: (typeof body.MediaSources)[number]) =>
+			source.MediaStreams.filter((s) => s.Type !== "Subtitle");
+		expect(decoded(body.MediaSources[0])).toHaveLength(3);
 		for (const other of body.MediaSources.slice(1)) {
-			expect(other.MediaStreams).toHaveLength(0);
+			expect(decoded(other)).toHaveLength(0);
 		}
 	});
 
