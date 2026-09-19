@@ -82,11 +82,19 @@ Go to **Dashboard → Plugins → Chaosflix** to set:
 | Preferred Quality | HD (1080p) / SD (576p) | HD |
 | Preferred Format | MP4 (H.264) / WebM (VP9) | MP4 |
 | Preferred Language | Original / Deutsch / English | Original |
+| Start on a version every client can play untouched | on / off | off |
 
 Every recording of a talk is offered as its own version ("HD MP4 · Deutsch",
 "SD WebM · English") in the player's version selector; these settings decide
 which of them is the default. A viewer can pick another one per playback and
 per device without changing anything here.
+
+The order is the same for every client: Jellyfin builds a talk's version list
+once and hands it to whoever asks next, so the plugin cannot sort it per
+device. That matters for WebM, because a client whose only transcoding video
+codec is H.264 — the Android app — has to re-encode VP9/Opus for the whole
+talk. Preferring MP4, or the setting above, keeps the default version one that
+every client streams untouched while WebM stays selectable.
 
 ### Scheduled Sync
 

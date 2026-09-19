@@ -24,6 +24,13 @@ public class PluginConfiguration : BasePluginConfiguration
     public VideoFormat PreferredFormat { get; set; } = VideoFormat.Mp4;
 
     /// <summary>
+    /// Gets or sets a value indicating whether a talk starts on a version every client
+    /// can stream without a re-encode, leaving <see cref="PreferredFormat"/> to order
+    /// the versions behind it.
+    /// </summary>
+    public bool CompatibleDefaultVersion { get; set; }
+
+    /// <summary>
     /// Gets or sets the CCC API endpoint. Empty means the public API at media.ccc.de;
     /// set it to use a mirror or, in the e2e tests, a local stand-in.
     /// </summary>

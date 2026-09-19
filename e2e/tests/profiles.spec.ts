@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 import {
+	ANDROID_CLIENT,
+	WEB_CLIENT,
 	apiContext,
+	clientContext,
 	setPluginConfig,
 	talkNamed,
 	userId,
@@ -215,6 +218,79 @@ test.describe("selectable versions", () => {
 		expect(mp4First.MediaSources.map((s) => s.Name).sort()).toEqual(
 			webmFirst.MediaSources.map((s) => s.Name).sort(),
 		);
+	});
+});
+
+// One list per talk, for everybody: Jellyfin's ChannelManager keeps what the
+// plugin returned in a server-wide cache keyed by the item alone, so the second
+// client to ask never reaches the plugin. An order picked per requesting device
+// would therefore be the order of whichever device asked first, which is why
+// #81 is answered with a setting instead (the plugin can see the client in the
+// authorization header, but it is not asked again to use it).
+test.describe("a compatible default version", () => {
+	test.afterAll(async () => {
+		await setPluginConfig(await apiContext(), {
+			PreferredFormat: "Mp4",
+			CompatibleDefaultVersion: false,
+		});
+	});
+
+	test("two clients are handed the same list in the same order", async () => {
+		const admin = await apiContext();
+		await setPluginConfig(admin, { PreferredFormat: "WebM" });
+		const talk = await talkNamed(admin, "Three stream talk");
+
+		const web = await clientContext(WEB_CLIENT);
+		const android = await clientContext(ANDROID_CLIENT);
+
+		const forWeb = await playbackInfoBody(web, talk.Id, BROWSER_WITHOUT_H264);
+		const forAndroid = await playbackInfoBody(
+			android,
+			talk.Id,
+			ANDROID_EXOPLAYER,
+		);
+
+		expect(forAndroid.MediaSources.map((s) => s.Id)).toEqual(
+			forWeb.MediaSources.map((s) => s.Id),
+		);
+		expect(forAndroid.MediaSources[0].Name).toBe("HD WebM · Deutsch");
+	});
+
+	test("Android gets an untouched MP4 while WebM stays the next version", async () => {
+		const api = await apiContext();
+		await setPluginConfig(api, {
+			PreferredFormat: "WebM",
+			CompatibleDefaultVersion: true,
+		});
+		const talk = await talkNamed(api, "Three stream talk");
+
+		const body = await playbackInfoBody(api, talk.Id, ANDROID_EXOPLAYER);
+
+		expect(body.MediaSources[0].Container).toBe("mp4");
+		expect(reencodedStreams(body.MediaSources[0])).toEqual([]);
+		expect(codecReasons(body.MediaSources[0])).toEqual([]);
+		// The preference still orders everything behind the default, so the
+		// WebM is one pick away for a client that can play it.
+		expect(body.MediaSources.map((s) => s.Name)).toEqual([
+			"HD MP4 · Deutsch",
+			"HD WebM · Deutsch",
+			"HD MP4 · English",
+			"SD MP4 · Deutsch",
+		]);
+	});
+
+	test("the preference alone still decides while it is off", async () => {
+		const api = await apiContext();
+		await setPluginConfig(api, {
+			PreferredFormat: "WebM",
+			CompatibleDefaultVersion: false,
+		});
+		const talk = await talkNamed(api, "Three stream talk");
+
+		const source = await playbackInfoFor(api, talk.Id, BROWSER_WITHOUT_H264);
+
+		expect(source.Container).toBe("webm");
+		expect(reencodedStreams(source)).toEqual([]);
 	});
 });
 

@@ -447,6 +447,71 @@ public class ChaosflixChannelTests
     }
 
     [Fact]
+    public async Task CompatibleDefaultPutsTheH264Mp4FirstAndKeepsWebMSecond()
+    {
+        TestPlugin.Configure(c =>
+        {
+            c.PreferredFormat = VideoFormat.WebM;
+            c.CompatibleDefaultVersion = true;
+        });
+        EventWithRecordings("e1",
+            Recording("h264-hd", language: "deu"),
+            Recording("h264-sd", highQuality: false, width: 720, language: "deu"),
+            Recording("webm-hd", "video/webm", language: "deu"));
+
+        var sources = await Sources("event:e1");
+
+        Assert.Equal(new[] { "h264-hd", "webm-hd", "h264-sd" }, sources.Select(s => Folder(s.Path)));
+    }
+
+    [Fact]
+    public async Task CompatibleDefaultLeavesAnAlreadyCompatibleOrderAlone()
+    {
+        TestPlugin.Configure(c => c.CompatibleDefaultVersion = true);
+        EventWithRecordings("e1",
+            Recording("h264-hd", language: "deu"),
+            Recording("webm-hd", "video/webm", language: "deu"));
+
+        var sources = await Sources("event:e1");
+
+        Assert.Equal(new[] { "h264-hd", "webm-hd" }, sources.Select(s => Folder(s.Path)));
+    }
+
+    [Fact]
+    public async Task CompatibleDefaultKeepsWebMFirstWhenNoMp4Exists()
+    {
+        TestPlugin.Configure(c =>
+        {
+            c.PreferredFormat = VideoFormat.WebM;
+            c.CompatibleDefaultVersion = true;
+        });
+        EventWithRecordings("e1",
+            Recording("webm-hd", "video/webm", language: "deu"),
+            Recording("webm-sd", "video/webm", highQuality: false, width: 720, language: "deu"));
+
+        var sources = await Sources("event:e1");
+
+        Assert.Equal(new[] { "webm-hd", "webm-sd" }, sources.Select(s => Folder(s.Path)));
+    }
+
+    [Fact]
+    public async Task CompatibleDefaultDoesNotPromoteAv1()
+    {
+        TestPlugin.Configure(c =>
+        {
+            c.PreferredFormat = VideoFormat.WebM;
+            c.CompatibleDefaultVersion = true;
+        });
+        EventWithRecordings("e1",
+            Recording("av1-hd"),
+            Recording("webm-hd", "video/webm"));
+
+        var sources = await Sources("event:e1");
+
+        Assert.Equal(new[] { "webm-hd", "av1-hd" }, sources.Select(s => Folder(s.Path)));
+    }
+
+    [Fact]
     public async Task VersionsThatWouldShareANameAreToldApartByResolution()
     {
         EventWithRecordings("e1",

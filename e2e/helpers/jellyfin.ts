@@ -42,6 +42,7 @@ export type PluginConfig = {
 	PreferredQuality?: "High" | "Standard";
 	PreferredFormat?: "Mp4" | "WebM";
 	PreferredLanguage?: string;
+	CompatibleDefaultVersion?: boolean;
 	ApiBaseUrl?: string;
 };
 
