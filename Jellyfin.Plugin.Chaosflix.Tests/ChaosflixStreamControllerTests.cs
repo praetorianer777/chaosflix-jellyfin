@@ -195,7 +195,7 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
         _cdn.AddRedirect("/cdn/hd.mp4", _cdn.AddFile("/mirror-b/hd.mp4", Video));
         var second = NewController();
 
-        await second.ProxyStream("e1", null, null, Sign("e1", null, null));
+        await second.ProxyStream("e1", t: Sign("e1", null, null));
 
         Assert.Equal(200, second.Response.StatusCode);
         Assert.Equal(Video, ((MemoryStream)second.Response.Body).ToArray());
@@ -305,7 +305,7 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
     {
         _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
 
-        await _controller.ProxyStream("e1", "h264-hd", "eng", null);
+        await _controller.ProxyStream("e1", recordingFolder: "h264-hd", language: "eng", t: null);
 
         Assert.Equal(401, _controller.Response.StatusCode);
         Assert.Empty(Body());
@@ -318,7 +318,7 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
         _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
 
         // Signed for the SD recording, used for the HD one.
-        await _controller.ProxyStream("e1", "h264-hd", "eng", Sign("e1", "h264-sd", "eng"));
+        await _controller.ProxyStream("e1", recordingFolder: "h264-hd", language: "eng", t: Sign("e1", "h264-sd", "eng"));
 
         Assert.Equal(401, _controller.Response.StatusCode);
         Assert.Empty(_cdn.Requests);
@@ -329,9 +329,55 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
     {
         _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
 
-        await _controller.ProxyStream("e1", "h264-hd", "eng", Sign("other-event", "h264-hd", "eng"));
+        await _controller.ProxyStream("e1", recordingFolder: "h264-hd", language: "eng", t: Sign("other-event", "h264-hd", "eng"));
 
         Assert.Equal(401, _controller.Response.StatusCode);
+        Assert.Empty(_cdn.Requests);
+    }
+
+    [Fact]
+    public async Task ServesASubtitleWithTheMimeTypeTheApiDeclares()
+    {
+        var srt = "1\n00:00:00,000 --> 00:00:04,000\nHello\n"u8.ToArray();
+        var mirror = _cdn.AddFile("/mirror/talk.fi.srt", srt, "application/octet-stream");
+        _api.Json("/public/events/e1", Event("e1", recordings:
+        [
+            Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video)),
+            Subtitle("talk.fi.srt", language: "fin", url: _cdn.AddRedirect("/cdn/talk.fi.srt", mirror))
+        ]));
+
+        await ProxySubtitle("e1", "talk.fi.srt");
+
+        Assert.Equal(200, _controller.Response.StatusCode);
+        Assert.Equal(srt, Body());
+        // The mirror answers application/octet-stream, which no client renders as
+        // a caption track.
+        Assert.Equal("application/x-subrip", _controller.Response.ContentType);
+    }
+
+    [Fact]
+    public async Task SubtitleOfAnotherFilenameIsRejected()
+    {
+        _api.Json("/public/events/e1", Event("e1", recordings:
+        [
+            Subtitle("a.srt", url: _cdn.AddFile("/a.srt", [1])),
+            Subtitle("b.srt", language: "fin", url: _cdn.AddFile("/b.srt", [2]))
+        ]));
+
+        await ProxySubtitle("e1", "b.srt", ProxySignature.Create("e1", null, null, "a.srt"));
+
+        Assert.Equal(401, _controller.Response.StatusCode);
+        Assert.Empty(_cdn.Requests);
+    }
+
+    [Fact]
+    public async Task UnknownSubtitleFilenameIs404()
+    {
+        _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
+
+        await ProxySubtitle("e1", "missing.srt");
+
+        Assert.Equal(404, _controller.Response.StatusCode);
         Assert.Empty(_cdn.Requests);
     }
 
@@ -339,7 +385,15 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
         ProxySignature.Create(guid, folder, language);
 
     private Task Proxy(string guid, string? folder = null, string? language = null) =>
-        _controller.ProxyStream(guid, folder, language, Sign(guid, folder, language));
+        _controller.ProxyStream(guid, recordingFolder: folder, language: language, t: Sign(guid, folder, language));
+
+    // Subtitles carry their signature and filename in the path, so the url ends in
+    // the file extension clients derive the subtitle format from.
+    private Task ProxySubtitle(string guid, string filename, string? signature = null) =>
+        _controller.ProxyStream(
+            guid,
+            signature: signature ?? ProxySignature.Create(guid, null, null, filename),
+            filename: filename);
 
     private byte[] Body() => ((MemoryStream)_controller.Response.Body).ToArray();
 }

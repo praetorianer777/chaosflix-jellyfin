@@ -50,6 +50,27 @@ function recording(
 	};
 }
 
+// media.ccc.de publishes subtitles as recordings of their own: no size, no
+// length, no dimensions, an empty folder, and a language that is the subtitle's
+// own rather than the video's.
+function subtitle(mimeType, file, { language = "eng", state = "complete" } = {}) {
+	return {
+		size: null,
+		length: null,
+		mime_type: mimeType,
+		language,
+		filename: file,
+		state,
+		folder: "",
+		high_quality: true,
+		width: null,
+		height: null,
+		recording_url: `http://fake-ccc:3000/cdn/${file}`,
+		url: `http://fake-ccc:3000/public/recordings/${file}`,
+		updated_at: "2025-12-30T12:00:00Z",
+	};
+}
+
 const EVENTS = [
 	{
 		guid: "e2e-0000-0000-0000-000000000001",
@@ -81,6 +102,19 @@ const EVENTS = [
 			recording("h264-hd-translated", "video/mp4", "two-stream.mp4", {
 				language: "eng",
 			}),
+			subtitle("text/vtt", "captions.eng.vtt"),
+			subtitle("application/x-subrip", "captions.fin.srt", {
+				language: "fin",
+			}),
+			// The API lists a subtitle as soon as a talk is queued for one; the
+			// file only exists once the state leaves "todo".
+			subtitle("text/vtt", "captions.deu.vtt", {
+				language: "deu",
+				state: "todo",
+			}),
+			// A filename that is only an extension is a leftover of the same
+			// pipeline and 404s.
+			subtitle("application/x-subrip", ".spa.srt", { language: "spa" }),
 		],
 		related: [{ event_guid: "e2e-0000-0000-0000-000000000002", weight: 9 }],
 	},

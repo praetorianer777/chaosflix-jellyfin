@@ -51,6 +51,21 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     // pathological one from filling a version list nobody can read.
     internal const int MaxSelectableSources = 8;
 
+    /// <summary>
+    /// The subtitle formats media.ccc.de publishes, mapped to the codec name an
+    /// external subtitle carries in Jellyfin: the file extension, not the ffmpeg
+    /// codec. A client only keeps the url we hand it when that name matches the
+    /// format in its subtitle profile, and every client spells them this way.
+    /// </summary>
+    private static readonly Dictionary<string, string> SubtitleCodecs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["text/vtt"] = "vtt",
+        ["text/webvtt"] = "vtt",
+        ["application/x-subrip"] = "srt",
+        ["text/srt"] = "srt",
+        ["application/x-subtitle"] = "srt"
+    };
+
     private static readonly Dictionary<string, string> LanguageNames = new(StringComparer.OrdinalIgnoreCase)
     {
         ["deu"] = "Deutsch",
@@ -629,6 +644,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         ranked = ranked.Take(MaxSelectableSources).ToList();
         var names = SourceNames(ranked);
+        var subtitles = SelectSubtitleRecordings(recordings);
         var sources = new List<MediaSourceInfo>(ranked.Count);
 
         for (var i = 0; i < ranked.Count; i++)
@@ -667,6 +683,13 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
             var audioStream = mediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Audio);
 
+            // Subtitles are files of their own, so every version can carry them. They
+            // add no video stream, which is what Jellyfin re-sorts the sources by, so
+            // declaring them on the alternates leaves the order from #69 intact.
+            mediaStreams = mediaStreams
+                .Concat(SubtitleStreams(subtitles, eventGuid, serverUrl, mediaStreams.Count))
+                .ToList();
+
             sources.Add(new MediaSourceInfo
             {
                 // The first source keeps the item id: that is the id the DTO
@@ -679,9 +702,9 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 Path = proxyUrl,
                 Protocol = MediaProtocol.Http,
                 Container = DetectContainer(recording),
-                Size = (long)recording.Size * 1024 * 1024,
-                RunTimeTicks = (long)recording.Length * TimeSpan.TicksPerSecond,
-                Bitrate = recording.Length > 0 ? (int)((long)recording.Size * 1024 * 1024 * 8 / recording.Length) : null,
+                Size = (long)(recording.Size ?? 0) * 1024 * 1024,
+                RunTimeTicks = (long)(recording.Length ?? 0) * TimeSpan.TicksPerSecond,
+                Bitrate = recording.Length > 0 ? (int)((long)(recording.Size ?? 0) * 1024 * 1024 * 8 / recording.Length.Value) : null,
                 VideoType = VideoType.VideoFile,
                 DefaultAudioStreamIndex = audioStream?.Index,
                 IsRemote = false,
@@ -695,6 +718,73 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         }
 
         return sources;
+    }
+
+    /// <summary>
+    /// Picks the subtitle recordings of a talk that actually resolve to a file.
+    /// </summary>
+    internal static List<CccRecording> SelectSubtitleRecordings(List<CccRecording> recordings)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var selected = new List<CccRecording>();
+
+        foreach (var recording in recordings)
+        {
+            if (!SubtitleCodecs.ContainsKey(recording.MimeType)
+                || string.IsNullOrEmpty(recording.RecordingUrl))
+            {
+                continue;
+            }
+
+            // "todo" is the c3subtitles queue: the API lists the recording as soon as
+            // a talk is scheduled for subtitling, months before the file exists, and
+            // the CDN answers 404 until it does.
+            if (recording.State.Equals("todo", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // A filename that is nothing but an extension (".en.srt") is a leftover of
+            // the same pipeline and 404s as well.
+            if (string.IsNullOrEmpty(recording.Filename) || recording.Filename.StartsWith('.'))
+            {
+                continue;
+            }
+
+            if (seen.Add($"{recording.Language}|{recording.MimeType}"))
+            {
+                selected.Add(recording);
+            }
+        }
+
+        return selected;
+    }
+
+    private static IEnumerable<MediaStream> SubtitleStreams(
+        List<CccRecording> subtitles, string eventGuid, string serverUrl, int firstIndex)
+    {
+        for (var i = 0; i < subtitles.Count; i++)
+        {
+            var recording = subtitles[i];
+            var signature = ProxySignature.Create(eventGuid, null, null, recording.Filename);
+            var url = $"{serverUrl}/api/ChaosflixStream/proxy/{eventGuid}/{signature}/"
+                + Uri.EscapeDataString(recording.Filename);
+
+            yield return new MediaStream
+            {
+                Index = firstIndex + i,
+                Type = MediaStreamType.Subtitle,
+                Codec = SubtitleCodecs[recording.MimeType],
+                Language = recording.Language,
+                Title = FormatLanguage(recording.Language),
+                IsExternal = true,
+                SupportsExternalStream = true,
+                DeliveryMethod = SubtitleDeliveryMethod.External,
+                DeliveryUrl = url,
+                IsExternalUrl = true,
+                Path = url
+            };
+        }
     }
 
     // Jellyfin caches one media source list per talk and hands it to every
@@ -738,7 +828,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
                 return r.Language.Contains(config.PreferredLanguage, StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             })
-            .ThenByDescending(r => r.Width)
+            .ThenByDescending(r => r.Width ?? 0)
             .ToList();
     }
 
@@ -934,7 +1024,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     }
 
     private static string FormatResolution(CccRecording r) =>
-        r.Height > 0 ? $"{r.Width}x{r.Height}" : $"{r.Width}p";
+        r.Height > 0 ? $"{r.Width}x{r.Height}" : $"{r.Width ?? 0}p";
 
     /// <summary>
     /// Turns a CCC language tag into what a viewer picking a version reads.

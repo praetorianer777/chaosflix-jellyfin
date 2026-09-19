@@ -11,6 +11,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Model.Channels;
+using MediaBrowser.Model.Dlna;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
@@ -793,6 +794,128 @@ public class ChaosflixChannelTests
         _plugin.UpdateConfiguration(new PluginConfiguration { PreferredFormat = VideoFormat.WebM });
 
         Assert.True(_mediaSourceCache.TryGetValue("event:conf-c:e1", out _));
+    }
+
+    [Fact]
+    public async Task SubtitleRecordingsBecomeExternalSubtitleStreams()
+    {
+        EventWithRecordings("e1",
+            Recording("h264-hd", language: "deu"),
+            Subtitle("talk.en.srt"),
+            Subtitle("talk.eng.vtt", "text/vtt"));
+
+        var source = Assert.Single(await Sources("event:e1"));
+        var subtitles = source.MediaStreams.Where(s => s.Type == MediaStreamType.Subtitle).ToList();
+
+        Assert.Equal(new[] { "srt", "vtt" }, subtitles.Select(s => s.Codec));
+        // The probed video and audio streams keep index 0 and 1.
+        Assert.Equal(new[] { 2, 3 }, subtitles.Select(s => s.Index));
+        Assert.All(subtitles, s =>
+        {
+            Assert.True(s.IsExternal);
+            Assert.True(s.IsTextSubtitleStream);
+            Assert.True(s.SupportsExternalStream);
+            Assert.Equal(SubtitleDeliveryMethod.External, s.DeliveryMethod);
+            Assert.True(s.IsExternalUrl);
+            Assert.Equal(s.Path, s.DeliveryUrl);
+        });
+    }
+
+    [Fact]
+    public async Task SubtitleUrlIsSignedAndEndsInTheFileExtension()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"), Subtitle("talk.fi.srt", language: "fin"));
+
+        var source = Assert.Single(await Sources("event:e1"));
+        var subtitle = Assert.Single(source.MediaStreams, s => s.Type == MediaStreamType.Subtitle);
+
+        var signature = Jellyfin.Plugin.Chaosflix.Api.ProxySignature.Create("e1", null, null, "talk.fi.srt");
+        Assert.Equal(
+            $"http://jellyfin:8096/api/ChaosflixStream/proxy/e1/{signature}/talk.fi.srt",
+            subtitle.Path);
+    }
+
+    [Fact]
+    public async Task SubtitleKeepsItsOwnLanguage()
+    {
+        EventWithRecordings("e1",
+            Recording("h264-hd", language: "deu"),
+            Subtitle("talk.fi.srt", language: "fin"));
+
+        var source = Assert.Single(await Sources("event:e1"));
+        var subtitle = Assert.Single(source.MediaStreams, s => s.Type == MediaStreamType.Subtitle);
+
+        Assert.Equal("fin", subtitle.Language);
+        Assert.Equal("FIN", subtitle.Title);
+    }
+
+    [Fact]
+    public async Task EveryVersionCarriesTheSubtitlesWithoutChangingTheOrder()
+    {
+        EventWithRecordings("e1",
+            Recording("h264-hd"),
+            Recording("webm-hd", "video/webm"),
+            Subtitle("talk.en.srt"));
+
+        var sources = await Sources("event:e1");
+
+        Assert.Equal(new[] { "h264-hd", "webm-hd" }, sources.Select(s => Folder(s.Path)));
+        Assert.All(sources, s => Assert.Single(s.MediaStreams, m => m.Type == MediaStreamType.Subtitle));
+        // Only the preferred version declares a video stream, so Jellyfin's sort by
+        // declared video width still leaves it in front (#69).
+        Assert.Equal(3, sources[0].MediaStreams.Count);
+        Assert.Equal(0, Assert.Single(sources[1].MediaStreams).Index);
+    }
+
+    [Fact]
+    public async Task TalkWithoutSubtitlesDeclaresNone()
+    {
+        EventWithRecordings("e1", Recording("h264-hd"), Recording("webm-hd", "video/webm"));
+
+        var sources = await Sources("event:e1");
+
+        Assert.DoesNotContain(sources[0].MediaStreams, s => s.Type == MediaStreamType.Subtitle);
+        Assert.Empty(sources[1].MediaStreams);
+    }
+
+    [Fact]
+    public async Task QueuedAndBrokenSubtitlesAreDropped()
+    {
+        EventWithRecordings("e1",
+            Recording("h264-hd"),
+            Subtitle("talk.de.srt", language: "deu", state: "todo"),
+            Subtitle(".es.srt", language: "spa"),
+            Subtitle("talk.en.srt"));
+
+        var source = Assert.Single(await Sources("event:e1"));
+
+        Assert.Equal(
+            new[] { "eng" },
+            source.MediaStreams.Where(s => s.Type == MediaStreamType.Subtitle).Select(s => s.Language));
+    }
+
+    [Fact]
+    public async Task ASubtitleLanguageIsOfferedOncePerFormat()
+    {
+        EventWithRecordings("e1",
+            Recording("h264-hd"),
+            Subtitle("talk.en.srt"),
+            Subtitle("talk-duplicate.en.srt"),
+            Subtitle("talk.eng.vtt", "text/vtt"));
+
+        var source = Assert.Single(await Sources("event:e1"));
+
+        Assert.Equal(
+            new[] { "srt", "vtt" },
+            source.MediaStreams.Where(s => s.Type == MediaStreamType.Subtitle).Select(s => s.Codec));
+    }
+
+    [Fact]
+    public async Task SubtitleOnlyTalkStillHasNoMediaSource()
+    {
+        EventWithRecordings("e1", Subtitle("talk.en.srt"));
+
+        Assert.Empty(await Sources("event:e1"));
     }
 
     private void CacheAsChannelManagerWould(string id) =>

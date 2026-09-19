@@ -21,7 +21,13 @@ test.describe("playback", () => {
 		const streams = source.MediaStreams.map(
 			(s: { Type: string; Index: number }) => `${s.Type}@${s.Index}`,
 		);
-		expect(streams).toEqual(["Video@0", "Video@1", "Audio@2"]);
+		expect(streams).toEqual([
+			"Video@0",
+			"Video@1",
+			"Audio@2",
+			"Subtitle@3",
+			"Subtitle@4",
+		]);
 		expect(source.DefaultAudioStreamIndex).toBe(2);
 	});
 

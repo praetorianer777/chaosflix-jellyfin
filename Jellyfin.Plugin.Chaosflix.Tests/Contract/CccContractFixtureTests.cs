@@ -51,10 +51,13 @@ public sealed class CccContractFixtureTests
 
     /// <summary>
     /// media.ccc.de sends <c>"length": null</c>, <c>"size": null</c>, <c>"width": null</c> and
-    /// <c>"height": null</c> for recordings that are not media — an unfinished subtitle track, for
-    /// instance. System.Text.Json refuses null for a non-nullable int, so without the converter on
-    /// <see cref="CccRecording"/> the whole event fails to deserialise and the talk disappears from
-    /// the channel. Recorded from /public/events/search?q=chaos.
+    /// <c>"height": null</c> for recordings that are not media — a subtitle track, for instance.
+    /// System.Text.Json refuses null for a non-nullable int, so unless <see cref="CccRecording"/>
+    /// declares those four nullable the whole event fails to deserialise and the talk disappears
+    /// from the channel. They stay null rather than becoming zero: zero is a value the API can
+    /// send, it would satisfy the "has a length" contract a video recording is held to, and
+    /// <c>size/length</c> is the bitrate the channel hands Jellyfin.
+    /// Recorded from /public/events/search?q=chaos.
     /// </summary>
     [Fact]
     public void RecordedSubtitleRecording_DeserialisesDespiteNullNumbers()
@@ -63,10 +66,10 @@ public sealed class CccContractFixtureTests
         var subtitle = response.Events[0].Recordings!
             .Single(r => r.MimeType == "application/x-subrip");
 
-        Assert.Equal(0, subtitle.Length);
-        Assert.Equal(0, subtitle.Size);
-        Assert.Equal(0, subtitle.Width);
-        Assert.Equal(0, subtitle.Height);
+        Assert.Null(subtitle.Length);
+        Assert.Null(subtitle.Size);
+        Assert.Null(subtitle.Width);
+        Assert.Null(subtitle.Height);
     }
 
     private static T Load<T>(string fileName)

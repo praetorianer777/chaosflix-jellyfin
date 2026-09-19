@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Chaosflix.Api.Models;
 using Jellyfin.Plugin.Chaosflix.Configuration;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -39,17 +40,27 @@ public class ChaosflixStreamController : ControllerBase
     /// Proxies a CCC recording from the CDN with full Range request support.
     /// This enables seeking in both browser and Android clients.
     /// </summary>
+    /// <remarks>
+    /// The second route is what subtitles use. Their signature and filename sit in
+    /// the path so the url ends in <c>.srt</c> or <c>.vtt</c>: Jellyfin and its
+    /// clients derive a subtitle's format from the extension of the url they are
+    /// handed, and a query string would end up in <c>Path.GetExtension</c>.
+    /// </remarks>
     [HttpGet("proxy/{eventGuid}")]
     [HttpHead("proxy/{eventGuid}")]
+    [HttpGet("proxy/{eventGuid}/{signature}/{filename}")]
+    [HttpHead("proxy/{eventGuid}/{signature}/{filename}")]
     public async Task ProxyStream(
         [FromRoute] string eventGuid,
+        [FromRoute] string? signature = null,
+        [FromRoute] string? filename = null,
         [FromQuery] string? recordingFolder = null,
         [FromQuery] string? language = null,
         [FromQuery(Name = ProxySignature.QueryParameter)] string? t = null)
     {
         // The endpoint is anonymous because the server's own ffmpeg fetches this
         // url; the signature is what keeps it from being a general purpose relay.
-        if (!ProxySignature.Verify(eventGuid, recordingFolder, language, t))
+        if (!ProxySignature.Verify(eventGuid, recordingFolder, language, signature ?? t, filename))
         {
             _logger.LogWarning("Rejected unsigned proxy request for {EventGuid}", eventGuid);
             Response.StatusCode = 401;
@@ -65,24 +76,42 @@ public class ChaosflixStreamController : ControllerBase
             return;
         }
 
-        var videoRecordings = cccEvent.Recordings
-            .Where(r => r.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        CccRecording? recording;
 
-        if (videoRecordings.Count == 0)
+        if (filename != null)
+        {
+            // Subtitles share the folder "" across every language and format, so the
+            // filename is the only thing that identifies one; it is signed like the rest.
+            recording = cccEvent.Recordings
+                .FirstOrDefault(r => r.Filename.Equals(filename, StringComparison.Ordinal));
+        }
+        else
+        {
+            var videoRecordings = cccEvent.Recordings
+                .Where(r => r.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (videoRecordings.Count == 0)
+            {
+                Response.StatusCode = 404;
+                return;
+            }
+
+            recording = videoRecordings.FirstOrDefault(r =>
+                (recordingFolder == null || r.Folder.Equals(recordingFolder, StringComparison.OrdinalIgnoreCase)) &&
+                (language == null || r.Language.Equals(language, StringComparison.OrdinalIgnoreCase)));
+
+            recording ??= videoRecordings
+                .OrderByDescending(r => r.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
+                .ThenByDescending(r => r.HighQuality ? 1 : 0)
+                .First();
+        }
+
+        if (recording == null)
         {
             Response.StatusCode = 404;
             return;
         }
-
-        var recording = videoRecordings.FirstOrDefault(r =>
-            (recordingFolder == null || r.Folder.Equals(recordingFolder, StringComparison.OrdinalIgnoreCase)) &&
-            (language == null || r.Language.Equals(language, StringComparison.OrdinalIgnoreCase)));
-
-        recording ??= videoRecordings
-            .OrderByDescending(r => r.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
-            .ThenByDescending(r => r.HighQuality ? 1 : 0)
-            .First();
 
         var originalUrl = recording.RecordingUrl;
         var resolvedUrl = await _apiClient.ResolveRedirectAsync(originalUrl, cancellationToken)
@@ -147,7 +176,14 @@ public class ChaosflixStreamController : ControllerBase
 
         Response.Headers["Accept-Ranges"] = "bytes";
 
-        if (finalResponse.Content.Headers.ContentType != null)
+        if (filename != null)
+        {
+            // The subtitle mirrors hand out .srt as application/octet-stream, which
+            // no client renders as a caption track; the API's own mime type is the
+            // one that describes the bytes.
+            Response.ContentType = recording.MimeType;
+        }
+        else if (finalResponse.Content.Headers.ContentType != null)
         {
             Response.ContentType = finalResponse.Content.Headers.ContentType.ToString();
         }

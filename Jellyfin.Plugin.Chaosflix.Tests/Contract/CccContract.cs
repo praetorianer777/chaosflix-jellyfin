@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Jellyfin.Plugin.Chaosflix.Api.Models;
 
@@ -215,9 +216,11 @@ public static class CccContract
         Assert.True(!string.IsNullOrWhiteSpace(recording.Folder), Missing("folder", where));
 
         // RunTimeTicks comes from length, and the bitrate Jellyfin uses to pick a stream is
-        // size/length — a zero in either turns into a zero runtime or a missing bitrate.
-        Assert.True(recording.Length > 0, $"length of {where} is {recording.Length}.");
-        Assert.True(recording.Size > 0, $"size of {where} is {recording.Size}.");
+        // size/length — a zero in either turns into a zero runtime or a missing bitrate, and a
+        // null (which the API sends for recordings that are not media) into neither. Both are
+        // false here, because a lifted comparison against null is false.
+        Assert.True(recording.Length > 0, $"length of {where} is {Number(recording.Length)}.");
+        Assert.True(recording.Size > 0, $"size of {where} is {Number(recording.Size)}.");
     }
 
     private static void AssertAtLeastOne(
@@ -242,4 +245,7 @@ public static class CccContract
 
     private static string Missing(string field, string where) =>
         $"The CCC API no longer delivers a usable '{field}' for {where}.";
+
+    private static string Number(int? value) =>
+        value?.ToString(CultureInfo.InvariantCulture) ?? "null";
 }
