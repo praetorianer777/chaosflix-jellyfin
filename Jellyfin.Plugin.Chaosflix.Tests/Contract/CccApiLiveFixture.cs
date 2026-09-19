@@ -189,7 +189,6 @@ public sealed class CccApiLiveFixture : IAsyncLifetime
             mirrorUrl,
             location != null,
             (int)rangeResponse.StatusCode,
-            rangeResponse.Headers.AcceptRanges.ToList(),
             rangeResponse.Content.Headers.ContentRange?.ToString(),
             body.Length);
     }
@@ -211,7 +210,6 @@ public sealed class CccApiLiveFixture : IAsyncLifetime
     /// <param name="MirrorUrl">The URL the CDN redirected to, or the original if it did not.</param>
     /// <param name="Redirected">Whether the CDN sent a Location header.</param>
     /// <param name="RangeStatus">Status of the ranged GET against the mirror (expected: 206).</param>
-    /// <param name="AcceptRanges">The mirror's Accept-Ranges header values.</param>
     /// <param name="ContentRange">The mirror's Content-Range header, if any.</param>
     /// <param name="BytesReturned">How many bytes the ranged GET actually returned.</param>
     public sealed record CdnProbe(
@@ -220,7 +218,6 @@ public sealed class CccApiLiveFixture : IAsyncLifetime
         string MirrorUrl,
         bool Redirected,
         int RangeStatus,
-        IReadOnlyList<string> AcceptRanges,
         string? ContentRange,
         int BytesReturned);
 
