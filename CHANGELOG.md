@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-19
+
+### Features
+
+- offer every recording as a selectable version (#74) (28c789c)
+
+### Bug fixes
+
+- detect the login route by url, not by #loginPage (#78) (4ab4d9e)
+- read a command's arguments without its redirections (#77) (6e4659b)
+- keep the recently added row to one copy per talk (#73) (fde2e1e)
+- stop releases from a checkout behind the remote (#66) (602ae94)
+- share watch state between the copies of a talk (#65) (5b4ab0e)
+
+### Other
+
+- give the client profiles the transcoding clients really send (#80) (62c1b79)
+- describe the release chain, tests and CI as they are (#68) (2c4bb00)
+
 ## [0.1.1] - 2026-09-18
 
 ### Bug fixes
