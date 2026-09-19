@@ -5,7 +5,7 @@
 </head>
 <body>
     <div id="ChaosflixConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
-         data-require="emby-select">
+         data-require="emby-select,emby-checkbox">
         <div data-role="content">
             <div class="content-primary">
                 <form id="ChaosflixConfigForm">
@@ -26,6 +26,17 @@
                                 <option value="Mp4">MP4 (H.264)</option>
                                 <option value="WebM">WebM (VP9)</option>
                             </select>
+                            <div class="fieldDescription">WebM costs a full re-encode on clients that can only transcode to H.264 — the Android app is one of them.</div>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input is="emby-checkbox" type="checkbox" id="CompatibleDefaultVersion" />
+                                <span>Start on a version every client can play untouched</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">
+                                Jellyfin hands every client the same list of versions, so the plugin cannot order it per device. With this on a talk starts on its H.264 MP4, which no client has to re-encode, and the preferred format only orders the versions behind it. Leave it off if your clients decode VP9 but not H.264.
+                            </div>
                         </div>
 
                         <div class="selectContainer">
@@ -66,6 +77,7 @@
                         page.querySelector('#PreferredQuality').value = config.PreferredQuality || 'High';
                         page.querySelector('#PreferredFormat').value = config.PreferredFormat || 'Mp4';
                         page.querySelector('#PreferredLanguage').value = config.PreferredLanguage || '';
+                        page.querySelector('#CompatibleDefaultVersion').checked = config.CompatibleDefaultVersion === true;
                         page.querySelector('#ApiBaseUrl').value = config.ApiBaseUrl || '';
                         Dashboard.hideLoadingMsg();
                     });
@@ -77,6 +89,7 @@
                         config.PreferredQuality = page.querySelector('#PreferredQuality').value;
                         config.PreferredFormat = page.querySelector('#PreferredFormat').value;
                         config.PreferredLanguage = page.querySelector('#PreferredLanguage').value;
+                        config.CompatibleDefaultVersion = page.querySelector('#CompatibleDefaultVersion').checked;
                         config.ApiBaseUrl = page.querySelector('#ApiBaseUrl').value;
                         ApiClient.updatePluginConfiguration(ChaosflixConfig.pluginUniqueId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);

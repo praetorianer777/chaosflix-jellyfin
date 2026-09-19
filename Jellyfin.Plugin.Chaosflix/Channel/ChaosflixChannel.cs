@@ -619,7 +619,13 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         // Every usable recording becomes a source so a viewer can pick another
         // quality or language per device; the configuration decides the order,
         // and Jellyfin plays the first one unless the viewer says otherwise.
-        var ranked = RankRecordings(videoRecordings, config).Take(MaxSelectableSources).ToList();
+        var ranked = RankRecordings(videoRecordings, config);
+        if (config.CompatibleDefaultVersion)
+        {
+            PromoteCompatibleDefault(ranked);
+        }
+
+        ranked = ranked.Take(MaxSelectableSources).ToList();
         var names = SourceNames(ranked);
         var sources = new List<MediaSourceInfo>(ranked.Count);
 
@@ -687,6 +693,25 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         }
 
         return sources;
+    }
+
+    // Jellyfin caches one media source list per talk and hands it to every
+    // client that asks within the next five minutes, so the order cannot depend
+    // on who is asking — a per-client order would be the order of whichever
+    // client asked first. The H.264 MP4 is the one recording no client has to
+    // re-encode: jellyfin-android offers h264 as its only transcoding video
+    // codec, and direct play is off for channel items (#81).
+    private static void PromoteCompatibleDefault(List<CccRecording> ranked)
+    {
+        var index = ranked.FindIndex(r => !IsAv1(r) && DetectContainer(r) == "mp4");
+        if (index <= 0)
+        {
+            return;
+        }
+
+        var compatible = ranked[index];
+        ranked.RemoveAt(index);
+        ranked.Insert(0, compatible);
     }
 
     private static List<CccRecording> RankRecordings(List<CccRecording> videoRecordings, PluginConfiguration config)
