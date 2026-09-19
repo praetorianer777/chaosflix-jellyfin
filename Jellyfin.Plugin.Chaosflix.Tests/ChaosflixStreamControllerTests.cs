@@ -81,6 +81,21 @@ public sealed class ChaosflixStreamControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task UnsatisfiableRangeKeepsItsContentRange()
+    {
+        _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
+        _controller.Request.Headers.Range = "bytes=5000-";
+
+        await Proxy("e1");
+
+        Assert.Equal(416, _controller.Response.StatusCode);
+        Assert.Equal("bytes */1000", _controller.Response.Headers.ContentRange.ToString());
+        Assert.Empty(_controller.Response.Headers.AcceptRanges.ToString());
+        Assert.Null(_controller.Response.ContentType);
+        Assert.Empty(Body());
+    }
+
+    [Fact]
     public async Task HeadReturnsHeadersWithoutBody()
     {
         _api.Json("/public/events/e1", Event("e1", recordings: [Recording("h264-hd", url: _cdn.AddFile("/hd.mp4", Video))]));
