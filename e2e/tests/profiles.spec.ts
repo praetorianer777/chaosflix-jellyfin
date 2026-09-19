@@ -13,6 +13,7 @@ import {
 	codecReasons,
 	playbackInfoBody,
 	playbackInfoFor,
+	reencodedStreams,
 } from "../helpers/profiles";
 
 // Fixing playback for one client kept breaking another (v0.0.26–v0.0.29).
@@ -88,6 +89,10 @@ test.describe("client profiles", () => {
 		const source = await playbackInfoFor(api, talk.Id, BROWSER_WITHOUT_H264);
 
 		expect(source.Container).toBe("webm");
+		// Both halves matter: the codecs in the transcoding url are what ffmpeg
+		// is told to do and mean the same on every server version, the reasons
+		// are what 12.1 reports about it (#79).
+		expect(reencodedStreams(source)).toEqual([]);
 		expect(codecReasons(source)).toEqual([]);
 	});
 
@@ -96,14 +101,22 @@ test.describe("client profiles", () => {
 		await setPluginConfig(api, { PreferredFormat: "WebM" });
 		const talk = await talkNamed(api, "Three stream talk");
 
-		// Android plays both, so it must stay free of re-encoding either way.
+		// Android is handed the WebM, and re-encodes it: jellyfin-android offers
+		// H.264 as its only transcoding video codec, and direct play is off for
+		// every channel item (#55), so the one path left goes through ffmpeg.
+		// That is the cost of preferring WebM on this client, not a fault of the
+		// switch — 10.11.7 simply never said so in TranscodeReasons (#79).
 		const webm = await playbackInfoFor(api, talk.Id, ANDROID_EXOPLAYER);
 		expect(webm.Container).toBe("webm");
-		expect(codecReasons(webm)).toEqual([]);
+		expect(reencodedStreams(webm)).toEqual([
+			"Video vp9→h264",
+			"Audio opus→aac",
+		]);
 
 		await setPluginConfig(api, { PreferredFormat: "Mp4" });
 		const mp4 = await playbackInfoFor(api, talk.Id, ANDROID_EXOPLAYER);
 		expect(mp4.Container).toBe("mp4");
+		expect(reencodedStreams(mp4)).toEqual([]);
 		expect(codecReasons(mp4)).toEqual([]);
 		// Stale probe data would describe the WebM here (#3).
 		expect(mp4.DefaultAudioStreamIndex).toBe(2);
