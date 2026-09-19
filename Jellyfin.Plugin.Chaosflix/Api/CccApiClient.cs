@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -39,6 +40,12 @@ public class CccApiClient : IDisposable
 
     /// <summary>Search results — cache for 10 minutes.</summary>
     private static readonly TimeSpan SearchTtl = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How long the configuration page's live check waits. Short on purpose: an endpoint
+    /// that needs longer than this is the answer the page is asking for.
+    /// </summary>
+    private static readonly TimeSpan ReachabilityTimeout = TimeSpan.FromSeconds(10);
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly HttpClient _httpClient;
@@ -144,12 +151,95 @@ public class CccApiClient : IDisposable
         }, cancellationToken);
     }
 
-    private static string Url(string path)
+    /// <summary>
+    /// Gets the endpoint requests actually go to: the configured one, or the public default.
+    /// </summary>
+    public static string BaseUrl
     {
-        var configured = Plugin.Instance?.Configuration.ApiBaseUrl;
-        var baseUrl = string.IsNullOrWhiteSpace(configured) ? DefaultBaseUrl : configured.TrimEnd('/');
-        return baseUrl + path;
+        get
+        {
+            var configured = Plugin.Instance?.Configuration.ApiBaseUrl;
+            return string.IsNullOrWhiteSpace(configured) ? DefaultBaseUrl : configured.TrimEnd('/');
+        }
     }
+
+    private static string Url(string path) => BaseUrl + path;
+
+    /// <summary>
+    /// Asks the configured endpoint for the conference list, bypassing the cache, and
+    /// reports whether it answered and how long it took. Used by the configuration page.
+    /// </summary>
+    internal async Task<ReachabilityResult> CheckReachabilityAsync(CancellationToken cancellationToken)
+    {
+        var url = Url("/conferences");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(ReachabilityTimeout);
+
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            using var response = await _httpClient.GetAsync(url, timeout.Token).ConfigureAwait(false);
+            int? conferences = null;
+            if (response.IsSuccessStatusCode)
+            {
+                var payload = await response.Content
+                    .ReadFromJsonAsync<CccConferencesResponse>(timeout.Token).ConfigureAwait(false);
+                conferences = payload?.Conferences?.Count ?? 0;
+            }
+
+            return new ReachabilityResult(
+                response.IsSuccessStatusCode,
+                (int)response.StatusCode,
+                Elapsed(started),
+                conferences,
+                response.IsSuccessStatusCode ? null : response.ReasonPhrase,
+                url);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            var reason = ex is OperationCanceledException
+                ? $"no answer within {ReachabilityTimeout.TotalSeconds:N0}s"
+                : ex.Message;
+            _logger.LogWarning(ex, "Reachability check for {Url} failed", url);
+            return new ReachabilityResult(false, null, Elapsed(started), null, reason, url);
+        }
+    }
+
+    /// <summary>
+    /// Counts what the cache currently holds, per kind of entry.
+    /// </summary>
+    internal CacheSnapshot GetCacheSnapshot() => new(
+        _cache.CountLive(),
+        _cache.CountLive(key => key == ConferencesCacheKey || key.StartsWith("conf:", StringComparison.Ordinal)),
+        _cache.CountLive(key => key.StartsWith("event:", StringComparison.Ordinal)),
+        _cache.CountLive(key => key.StartsWith("search:", StringComparison.Ordinal)),
+        _cache.CountLive(key => key.StartsWith("redirect:", StringComparison.Ordinal)),
+        _cache.Capacity,
+        _cache.Hits,
+        _cache.Misses);
+
+    private static double Elapsed(long startedAt) =>
+        Math.Round(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds, 1);
+
+    /// <summary>Outcome of <see cref="CheckReachabilityAsync"/>.</summary>
+    internal sealed record ReachabilityResult(
+        bool Ok,
+        int? StatusCode,
+        double ElapsedMs,
+        int? ConferenceCount,
+        string? Error,
+        string Url);
+
+    /// <summary>What the API cache holds right now.</summary>
+    internal sealed record CacheSnapshot(
+        int Entries,
+        int Conferences,
+        int Events,
+        int Searches,
+        int Redirects,
+        int Capacity,
+        long Hits,
+        long Misses);
 
     /// <summary>
     /// Clears the entire cache.

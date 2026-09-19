@@ -90,6 +90,8 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private readonly ConcurrentDictionary<string, DateTimeOffset> _servedItemIds = new();
     private readonly Lock _subscriptionLock = new();
     private Plugin? _subscribedPlugin;
+    private long _probeHits;
+    private long _probeMisses;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ChaosflixChannel"/> class.
@@ -746,8 +748,11 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         var now = _timeProvider.GetUtcNow();
         if (_probeCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
         {
+            Interlocked.Increment(ref _probeHits);
             return cached.Streams;
         }
+
+        Interlocked.Increment(ref _probeMisses);
 
         try
         {
@@ -801,6 +806,28 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             }
         }
     }
+
+    /// <summary>
+    /// Counts what the probe cache holds, for the configuration page.
+    /// </summary>
+    internal ProbeCacheStats GetProbeCacheStats()
+    {
+        var now = _timeProvider.GetUtcNow();
+        return new ProbeCacheStats(
+            _probeCache.Count(e => e.Value.ExpiresAt > now),
+            ProbeCacheCapacity,
+            Interlocked.Read(ref _probeHits),
+            Interlocked.Read(ref _probeMisses),
+            _servedItemIds.Count);
+    }
+
+    /// <summary>
+    /// Forgets every probed stream layout, so the next playback probes the file again.
+    /// </summary>
+    internal void ClearProbeCache() => _probeCache.Clear();
+
+    /// <summary>What the probe cache holds right now.</summary>
+    internal sealed record ProbeCacheStats(int Entries, int Capacity, long Hits, long Misses, int ServedItems);
 
     /// <summary>
     /// Drops the media sources Jellyfin cached for every talk this channel has

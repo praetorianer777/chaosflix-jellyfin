@@ -60,16 +60,137 @@
                         </button>
                     </div>
                 </form>
+
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Status</h2>
+                    <div class="fieldDescription">What the plugin thinks is true right now. Nothing here talks to media.ccc.de until you ask it to.</div>
+
+                    <div id="ChaosflixStatus" class="paperList" style="padding: 0.5em 1em;">Loading…</div>
+
+                    <div>
+                        <button is="emby-button" type="button" id="ChaosflixRefresh" class="raised emby-button">
+                            <span>Refresh</span>
+                        </button>
+                        <button is="emby-button" type="button" id="ChaosflixCheckApi" class="raised emby-button">
+                            <span>Check endpoint now</span>
+                        </button>
+                        <button is="emby-button" type="button" id="ChaosflixClearCaches" class="raised emby-button">
+                            <span>Clear caches</span>
+                        </button>
+                    </div>
+                    <div id="ChaosflixApiCheck" class="fieldDescription"></div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Check a talk</h2>
+                    <div class="fieldDescription">Resolves one talk the way playback does — API lookup, recording choice, signed proxy url, proxy request, probe — and names the stage that fails.</div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ChaosflixTalkId">Talk guid, slug or media.ccc.de url</label>
+                        <input is="emby-input" type="text" id="ChaosflixTalkId" />
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="button" id="ChaosflixCheckTalk" class="raised emby-button">
+                            <span>Check this talk</span>
+                        </button>
+                    </div>
+                    <div id="ChaosflixTalkCheck" class="fieldDescription"></div>
+                </div>
             </div>
         </div>
 
         <script type="text/javascript">
             var ChaosflixConfig = {
-                pluginUniqueId: 'c4a05f11-4ccc-4b00-bdea-dbeef1337000'
+                pluginUniqueId: 'c4a05f11-4ccc-4b00-bdea-dbeef1337000',
+                statusEndpoint: 'api/ChaosflixStatus'
             };
 
             (function () {
                 var page = document.querySelector('#ChaosflixConfigPage');
+
+                function statusUrl(action) {
+                    return ApiClient.getUrl(ChaosflixConfig.statusEndpoint + (action ? '/' + action : ''));
+                }
+
+                function post(action, query) {
+                    return ApiClient.ajax({
+                        type: 'POST',
+                        url: statusUrl(action) + (query || ''),
+                        dataType: 'json'
+                    });
+                }
+
+                // Talk titles and error messages come from media.ccc.de, so every value
+                // is written as text and never as markup.
+                function row(container, label, value) {
+                    var line = document.createElement('div');
+                    var name = document.createElement('strong');
+                    name.textContent = label + ': ';
+                    line.appendChild(name);
+                    line.appendChild(document.createTextNode(value));
+                    container.appendChild(line);
+                }
+
+                function percent(value) {
+                    return value === null || value === undefined ? 'n/a' : value + '%';
+                }
+
+                function renderStatus(status) {
+                    var target = page.querySelector('#ChaosflixStatus');
+                    target.textContent = '';
+
+                    row(target, 'Plugin version', status.Version);
+                    row(target, 'Endpoint', status.ApiBaseUrl + (status.ApiBaseUrlIsDefault ? ' (default)' : ' (configured)'));
+
+                    var sync = status.Sync;
+                    if (!sync.Registered) {
+                        row(target, 'Sync task', 'not registered with this server');
+                    } else if (!sync.LastRunUtc) {
+                        row(target, 'Sync task', sync.State + ', has not run yet');
+                    } else {
+                        row(target, 'Sync task', sync.LastResult + ' — ' + new Date(sync.LastRunUtc).toLocaleString() +
+                            ', took ' + sync.DurationSeconds + 's (now ' + sync.State + ')');
+                        if (sync.Error) {
+                            row(target, 'Sync error', sync.Error);
+                        }
+                    }
+
+                    var cache = status.ApiCache;
+                    row(target, 'API cache', cache.Entries + '/' + cache.Capacity + ' entries — ' +
+                        cache.Conferences + ' conferences, ' + cache.Events + ' talks, ' +
+                        cache.Searches + ' searches, ' + cache.Redirects + ' CDN mirrors');
+                    row(target, 'API cache hit rate', percent(cache.HitRatePercent) +
+                        ' (' + cache.Hits + ' hits, ' + cache.Misses + ' misses since server start)');
+
+                    var probe = status.ProbeCache;
+                    row(target, 'Probe cache', probe.Entries + '/' + probe.Capacity + ' stream layouts, hit rate ' +
+                        percent(probe.HitRatePercent) + ' (' + probe.Hits + ' hits, ' + probe.Misses + ' misses)');
+                    row(target, 'Media sources handed out', probe.ServedItems +
+                        ' talks a configuration change or a cache clear would invalidate');
+                }
+
+                function loadStatus() {
+                    return ApiClient.getJSON(statusUrl()).then(renderStatus, function () {
+                        page.querySelector('#ChaosflixStatus').textContent = 'The status endpoint did not answer.';
+                    });
+                }
+
+                function renderTalkCheck(result) {
+                    var target = page.querySelector('#ChaosflixTalkCheck');
+                    target.textContent = '';
+
+                    row(target, result.Ok ? 'Result' : 'Failed at',
+                        result.Ok ? 'resolved end to end' : result.FailedStage);
+                    if (result.Title) {
+                        row(target, 'Talk', result.Title);
+                    }
+
+                    result.Stages.forEach(function (stage) {
+                        row(target, (stage.Ok ? '✓ ' : '✗ ') + stage.Name,
+                            stage.Detail + (stage.ElapsedMs ? ' (' + stage.ElapsedMs + ' ms)' : ''));
+                    });
+                }
 
                 page.addEventListener('pageshow', function () {
                     Dashboard.showLoadingMsg();
@@ -80,6 +201,55 @@
                         page.querySelector('#CompatibleDefaultVersion').checked = config.CompatibleDefaultVersion === true;
                         page.querySelector('#ApiBaseUrl').value = config.ApiBaseUrl || '';
                         Dashboard.hideLoadingMsg();
+                    });
+
+                    // Cheap by construction: the endpoint only reads counters the plugin
+                    // already keeps. The checks below are the ones that cost something,
+                    // and they run on click.
+                    loadStatus();
+                });
+
+                page.querySelector('#ChaosflixRefresh').addEventListener('click', loadStatus);
+
+                page.querySelector('#ChaosflixCheckApi').addEventListener('click', function () {
+                    var target = page.querySelector('#ChaosflixApiCheck');
+                    target.textContent = 'Asking the endpoint…';
+                    post('CheckApi').then(function (result) {
+                        target.textContent = '';
+                        row(target, result.Ok ? 'Reachable' : 'Unreachable', result.Url);
+                        row(target, 'Round trip', result.ElapsedMs + ' ms');
+                        if (result.Ok) {
+                            row(target, 'Answer', result.StatusCode + ', ' + result.ConferenceCount + ' conferences listed');
+                        } else {
+                            row(target, 'Error', (result.StatusCode ? result.StatusCode + ' ' : '') + (result.Error || 'no answer'));
+                        }
+                    }, function () {
+                        target.textContent = 'The check could not be run.';
+                    });
+                });
+
+                page.querySelector('#ChaosflixClearCaches').addEventListener('click', function () {
+                    Dashboard.showLoadingMsg();
+                    post('ClearCaches').then(function (status) {
+                        renderStatus(status);
+                        Dashboard.hideLoadingMsg();
+                    }, function () {
+                        Dashboard.hideLoadingMsg();
+                        page.querySelector('#ChaosflixStatus').textContent = 'Clearing the caches failed.';
+                    });
+                });
+
+                page.querySelector('#ChaosflixCheckTalk').addEventListener('click', function () {
+                    var id = page.querySelector('#ChaosflixTalkId').value.trim();
+                    var target = page.querySelector('#ChaosflixTalkCheck');
+                    if (!id) {
+                        target.textContent = 'Enter a talk guid, slug or media.ccc.de url first.';
+                        return;
+                    }
+
+                    target.textContent = 'Resolving ' + id + '…';
+                    post('CheckTalk', '?id=' + encodeURIComponent(id)).then(renderTalkCheck, function () {
+                        target.textContent = 'The check could not be run.';
                     });
                 });
 
@@ -93,6 +263,7 @@
                         config.ApiBaseUrl = page.querySelector('#ApiBaseUrl').value;
                         ApiClient.updatePluginConfiguration(ChaosflixConfig.pluginUniqueId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
+                            loadStatus();
                         });
                     });
                     e.preventDefault();
