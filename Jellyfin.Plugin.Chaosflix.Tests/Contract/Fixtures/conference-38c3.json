@@ -1,0 +1,61 @@
+{
+  "acronym": "38c3",
+  "aspect_ratio": "16:9",
+  "created_at": "2024-12-19T14:20:07.224+01:00",
+  "updated_at": "2026-09-19T11:45:08.169+02:00",
+  "title": "38C3: Illegal Instructions",
+  "schedule_url": "",
+  "slug": "congress/2024",
+  "event_last_released_at": "2025-03-17T00:00:00.000+01:00",
+  "link": "https://events.ccc.de/congress/2024/",
+  "description": "The 38th Chaos Communication Congress (38C3) takes place in Hamburg, 27.-30.12.2024, and is the 2024 edition of the annual four-day conference on technology, society and utopia organised by the Chaos Computer Club (CCC) and volunteers.",
+  "webgen_location": "congress/2024",
+  "logo_url": "https://static.media.ccc.de/media/congress/2024/logo.svg",
+  "images_url": "https://static.media.ccc.de/media/congress/2024",
+  "images": [
+    {
+      "type": "logo",
+      "url": "https://static.media.ccc.de/media/congress/2024/logo.svg",
+      "mime_type": "image/svg+xml"
+    }
+  ],
+  "recordings_url": "https://cdn.media.ccc.de/congress/2024",
+  "url": "https://api.media.ccc.de/public/conferences/38c3",
+  "events": [
+    {
+      "guid": "98C007E2-A3B2-44FD-ADF5-D21224DE0988",
+      "title": "Rekordbox, gib mir meine Daten! - Überblick von Datenzugriff in DJ Software & Hardware",
+      "subtitle": null,
+      "slug": "38c3-rekordbox-gib-mir-meine-daten-berblick-von-datenzugriff-in-dj-software-hardware",
+      "link": "https://events.ccc.de/congress/2024/hub/en/event/rekordbox-gib-mir-meine-daten-berblick-von-datenzugriff-in-dj-software-hardware/",
+      "description": "Wir Hackende müssen eine große Gefahr für unsere eigenen Daten sein, wenn die Hersteller die Maßnahmen ergreifen, die ich euch in diesem Talk unter Anderem vorstelle.",
+      "original_language": "deu",
+      "persons": [
+        "function"
+      ],
+      "view_count": 417,
+      "promoted": false,
+      "date": "2024-12-30T14:30:00.000+01:00",
+      "release_date": "2025-03-17T00:00:00.000+01:00",
+      "updated_at": "2026-09-18T12:15:06.742+02:00",
+      "tags": [
+        "100002",
+        "2024",
+        "38c3",
+        "Chaos Computer Music Club",
+        "38c3-deu"
+      ],
+      "length": 1914,
+      "duration": 1914,
+      "thumb_url": "https://static.media.ccc.de/media/congress/2024/100002-98C007E2-A3B2-44FD-ADF5-D21224DE0988.jpg",
+      "poster_url": "https://static.media.ccc.de/media/congress/2024/100002-98C007E2-A3B2-44FD-ADF5-D21224DE0988_preview.jpg",
+      "timeline_url": "https://static.media.ccc.de/media/congress/2024/100002-98C007E2-A3B2-44FD-ADF5-D21224DE0988.timeline.jpg",
+      "thumbnails_url": "https://static.media.ccc.de/media/congress/2024/100002-98C007E2-A3B2-44FD-ADF5-D21224DE0988.thumbnails.vtt",
+      "frontend_link": "https://media.ccc.de/v/38c3-rekordbox-gib-mir-meine-daten-berblick-von-datenzugriff-in-dj-software-hardware",
+      "url": "https://api.media.ccc.de/public/events/98C007E2-A3B2-44FD-ADF5-D21224DE0988",
+      "conference_title": "38C3: Illegal Instructions",
+      "conference_url": "https://api.media.ccc.de/public/conferences/38c3",
+      "related": []
+    }
+  ]
+}

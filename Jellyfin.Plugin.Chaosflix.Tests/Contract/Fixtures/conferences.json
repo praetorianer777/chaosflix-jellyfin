@@ -1,0 +1,142 @@
+{
+  "conferences": [
+    {
+      "acronym": "jhch",
+      "aspect_ratio": "16:9",
+      "created_at": "2023-11-11T09:55:59.583+01:00",
+      "updated_at": "2026-09-06T17:00:05.385+02:00",
+      "title": "Jugend hackt Schweiz",
+      "schedule_url": "",
+      "slug": "events/jugendhackt/schweiz",
+      "event_last_released_at": "2025-09-10T00:00:00.000+02:00",
+      "link": "",
+      "description": "",
+      "webgen_location": "events/jugendhackt/schweiz",
+      "logo_url": "https://static.media.ccc.de/media/unknown.png",
+      "images_url": "https://static.media.ccc.de/media/events/jugendhackt/schweiz",
+      "images": [],
+      "recordings_url": "https://cdn.media.ccc.de/events/jugendhackt/schweiz",
+      "url": "https://api.media.ccc.de/public/conferences/jhch"
+    },
+    {
+      "acronym": "fossgis2025",
+      "aspect_ratio": "16:9",
+      "created_at": "2025-03-24T22:18:17.571+01:00",
+      "updated_at": "2026-09-18T20:00:05.949+02:00",
+      "title": "FOSSGIS 2025",
+      "schedule_url": "https://pretalx.com/fossgis2025/schedule/export/schedule.xml",
+      "slug": "conferences/geo/fossgis2025",
+      "event_last_released_at": "2025-03-28T00:00:00.000+01:00",
+      "link": "https://fossgis-konferenz.de/2025/",
+      "description": "",
+      "webgen_location": "conferences/geo/fossgis2025",
+      "logo_url": "https://static.media.ccc.de/media/events/fossgis/2025/logo-fossgis2025.png",
+      "images_url": "https://static.media.ccc.de/media/events/fossgis/2025",
+      "images": [
+        {
+          "type": "logo",
+          "url": "https://static.media.ccc.de/media/events/fossgis/2025/logo-fossgis2025.png",
+          "mime_type": "image/png"
+        }
+      ],
+      "recordings_url": "https://cdn.media.ccc.de/events/fossgis/2025",
+      "url": "https://api.media.ccc.de/public/conferences/fossgis2025"
+    },
+    {
+      "acronym": "eh2010",
+      "aspect_ratio": "16:9",
+      "created_at": "2014-05-10T15:26:08.776+02:00",
+      "updated_at": "2026-09-17T14:30:07.223+02:00",
+      "title": "Easterhegg 2010",
+      "schedule_url": "",
+      "slug": "conferences/easterhegg/2010",
+      "event_last_released_at": "2010-04-20T02:00:00.000+02:00",
+      "link": null,
+      "description": null,
+      "webgen_location": "conferences/easterhegg/2010",
+      "logo_url": "https://static.media.ccc.de/media/conferences/eh2010/black_rabbit.svg",
+      "images_url": "https://static.media.ccc.de/media/conferences/eh2010",
+      "images": [
+        {
+          "type": "logo",
+          "url": "https://static.media.ccc.de/media/conferences/eh2010/black_rabbit.svg",
+          "mime_type": "image/svg+xml"
+        }
+      ],
+      "recordings_url": "https://cdn.media.ccc.de/events/eh2010",
+      "url": "https://api.media.ccc.de/public/conferences/eh2010"
+    },
+    {
+      "acronym": "gpw2022",
+      "aspect_ratio": "16:9",
+      "created_at": "2022-06-08T15:10:10.811+02:00",
+      "updated_at": "2026-09-15T20:45:12.545+02:00",
+      "title": "Deutscher Perl/Raku Workshop 2022",
+      "schedule_url": "https://act.yapc.eu/gpw2022/schedule",
+      "slug": "conferences/gpw/2022",
+      "event_last_released_at": "2022-08-02T00:00:00.000+02:00",
+      "link": "",
+      "description": "The German Perl/Raku Workshop is an Open Source conference for everyone.",
+      "webgen_location": "conferences/gpw/2022",
+      "logo_url": "https://static.media.ccc.de/media/conferences/gpw/2022/logo.png",
+      "images_url": "https://static.media.ccc.de/media/conferences/gpw/2022",
+      "images": [
+        {
+          "type": "logo",
+          "url": "https://static.media.ccc.de/media/conferences/gpw/2022/logo.png",
+          "mime_type": "image/png"
+        }
+      ],
+      "recordings_url": "https://cdn.media.ccc.de/events/gpw/2022",
+      "url": "https://api.media.ccc.de/public/conferences/gpw2022"
+    },
+    {
+      "acronym": "otp2025",
+      "aspect_ratio": "16:9",
+      "created_at": "2025-10-01T21:25:59.211+02:00",
+      "updated_at": "2026-09-18T13:00:10.277+02:00",
+      "title": "Worldwide OTP Summit 2025 Helsinki",
+      "schedule_url": "",
+      "slug": "conferences/otp2025",
+      "event_last_released_at": "2025-10-06T00:00:00.000+02:00",
+      "link": "",
+      "description": "",
+      "webgen_location": "conferences/otp2025",
+      "logo_url": "https://static.media.ccc.de/media/events/otp/2025/logo.svg",
+      "images_url": "https://static.media.ccc.de/media/events/otp/2025",
+      "images": [
+        {
+          "type": "logo",
+          "url": "https://static.media.ccc.de/media/events/otp/2025/logo.svg",
+          "mime_type": "image/svg+xml"
+        }
+      ],
+      "recordings_url": "https://cdn.media.ccc.de/events/otp/2025",
+      "url": "https://api.media.ccc.de/public/conferences/otp2025"
+    },
+    {
+      "acronym": "glt23",
+      "aspect_ratio": "16:9",
+      "created_at": "2023-04-15T11:26:42.545+02:00",
+      "updated_at": "2026-09-14T22:45:13.853+02:00",
+      "title": "Grazer Linuxtage 2023",
+      "schedule_url": "https://pretalx.linuxtage.at/glt23/schedule/export/schedule.xml",
+      "slug": "conferences/glt/2023",
+      "event_last_released_at": "2023-04-16T00:00:00.000+02:00",
+      "link": "https://www.linuxtage.at/",
+      "description": "",
+      "webgen_location": "conferences/glt/2023",
+      "logo_url": "https://static.media.ccc.de/media/events/glt/2023/../steirertux.png",
+      "images_url": "https://static.media.ccc.de/media/events/glt/2023",
+      "images": [
+        {
+          "type": "logo",
+          "url": "https://static.media.ccc.de/media/events/glt/2023/../steirertux.png",
+          "mime_type": "image/png"
+        }
+      ],
+      "recordings_url": "https://cdn.media.ccc.de/events/glt23",
+      "url": "https://api.media.ccc.de/public/conferences/glt23"
+    }
+  ]
+}

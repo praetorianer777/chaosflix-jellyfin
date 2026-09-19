@@ -10,10 +10,12 @@ public class CccRecording
 {
     /// <summary>Gets or sets the file size in MB.</summary>
     [JsonPropertyName("size")]
+    [JsonConverter(typeof(NullableToZeroInt32Converter))]
     public int Size { get; set; }
 
     /// <summary>Gets or sets the length in seconds.</summary>
     [JsonPropertyName("length")]
+    [JsonConverter(typeof(NullableToZeroInt32Converter))]
     public int Length { get; set; }
 
     /// <summary>Gets or sets the MIME type.</summary>
@@ -42,10 +44,12 @@ public class CccRecording
 
     /// <summary>Gets or sets the width.</summary>
     [JsonPropertyName("width")]
+    [JsonConverter(typeof(NullableToZeroInt32Converter))]
     public int Width { get; set; }
 
     /// <summary>Gets or sets the height.</summary>
     [JsonPropertyName("height")]
+    [JsonConverter(typeof(NullableToZeroInt32Converter))]
     public int Height { get; set; }
 
     /// <summary>Gets or sets the direct recording URL.</summary>
