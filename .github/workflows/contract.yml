@@ -1,0 +1,49 @@
+name: CCC API contract
+
+# Never on push or pull_request: these tests query api.media.ccc.de, so a third-party
+# outage would turn every PR red and every push would add load to someone else's free
+# public service. Nightly instead — an upstream field rename is then found within a day
+# (#18), and one run costs the API well under a dozen requests.
+on:
+  schedule:
+    - cron: "43 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: contract-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # Without CCC_CONTRACT the [ContractFact] tests skip, which is what keeps them out of
+      # run-tests.sh; the Category filter keeps this job from re-running the offline suite.
+      - name: Run the contract tests against the real API
+        env:
+          CCC_CONTRACT: "1"
+        run: |
+          dotnet test Jellyfin.Plugin.Chaosflix.Tests/Jellyfin.Plugin.Chaosflix.Tests.csproj \
+            -c Release --filter "Category=Contract" --logger "console;verbosity=detailed"

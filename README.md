@@ -243,11 +243,12 @@ That is the shell tests, a Release build, the unit tests (`*.Tests.csproj`) and
 the Playwright suite in `e2e/`, which starts a real Jellyfin in Docker against a
 fake `media.ccc.de`. The branch guard runs it on every `git push`.
 
-Four suites stay out of it because they need an emulator, a network clone or a
-published release, and are opt-in:
+Five suites stay out of it because they need an emulator, a network clone, a
+published release or the live media.ccc.de, and are opt-in:
 
 | Suite | How | What it covers |
 |---|---|---|
+| CCC API contract | `CCC_CONTRACT=1 ./run-tests.sh` | the **real** api.media.ccc.de still has the fields the plugin reads ([`Contract/`](Jellyfin.Plugin.Chaosflix.Tests/Contract)) |
 | Android phone app | `ANDROID_E2E=1 ./run-tests.sh` | real ExoPlayer on an emulator ([`e2e/android`](e2e/android)) |
 | Cast receiver | `RECEIVER_E2E=1 ./run-tests.sh` | the real jellyfin-chromecast bundle in a browser |
 | Android TV | `e2e/android/tv-repro.sh` | jellyfin-androidtv on a TV emulator, driven by hand |
@@ -264,6 +265,7 @@ The e2e stack is configurable: `JELLYFIN_TAG` (`latest` is 12.1), `JELLYFIN_PORT
 | `release.yml` | a `v*` tag | build, publish the release with its ZIP, commit the checksum |
 | `android-e2e.yml` | nightly, or on demand | the Android emulator suite |
 | `install-e2e.yml` | after a release, and nightly | install the published plugin into the newest Jellyfin |
+| `contract.yml` | nightly, or on demand | the contract tests against the real media.ccc.de API |
 
 The runner deliberately has no `ffmpeg`, so the fixture build exercises its
 container fallback — that path was broken for as long as nothing ran it.
