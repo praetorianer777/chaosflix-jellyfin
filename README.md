@@ -53,6 +53,26 @@ All content is sourced from [media.ccc.de](https://media.ccc.de) via their publi
 3. Restart Jellyfin
 4. The **Chaosflix** channel appears under **Home → My Media → Channels**
 
+## Troubleshooting
+
+**The channel is missing for one user.** Jellyfin decides per user which channels
+exist at all: Dashboard → Users → _user_ → Access → **Channel Access**. When
+Chaosflix is not ticked the server leaves it out of that user's views entirely,
+so clients show nothing rather than an error. New users get access to all
+channels by default, so this only bites where an admin once picked channels by
+hand — a plugin installed afterwards is not added to that list.
+
+**The channel is missing on one device but visible elsewhere.** The Android TV
+app builds its library row once and registers no refresh trigger, so a client
+that has been running since before the plugin was installed keeps its old set of
+libraries. Force-stop the app (Settings → Apps → Jellyfin → Force stop) and
+reopen it; returning to the launcher is not enough.
+
+**A talk does not play.** Dashboard → Plugins → Chaosflix shows what the plugin
+believes: whether media.ccc.de answers, what is cached, and a **check a talk**
+box that resolves one talk end to end — API lookup, recording choice, signed
+proxy url, proxy reachability and stream probe — and names the stage that fails.
+
 ## Channel Structure
 
 ```
