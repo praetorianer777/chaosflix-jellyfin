@@ -21,6 +21,8 @@ public class MemoryCache
     private readonly ConcurrentDictionary<string, Gate> _locks = new();
     private readonly TimeProvider _timeProvider;
     private readonly int _capacity;
+    private long _hits;
+    private long _misses;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MemoryCache"/> class.
@@ -38,6 +40,23 @@ public class MemoryCache
 
     internal int LockCount => _locks.Count;
 
+    internal int Capacity => _capacity;
+
+    internal long Hits => Interlocked.Read(ref _hits);
+
+    internal long Misses => Interlocked.Read(ref _misses);
+
+    /// <summary>
+    /// Counts the entries that would still be served. Expired entries are only dropped
+    /// when something is written, so <see cref="Count"/> can outrun what is usable.
+    /// </summary>
+    internal int CountLive(Func<string, bool>? predicate = null)
+    {
+        var now = _timeProvider.GetUtcNow();
+        return _cache.Count(entry =>
+            entry.Value.ExpiresAt > now && (predicate is null || predicate(entry.Key)));
+    }
+
     /// <summary>
     /// Gets or creates a cached value.
     /// </summary>
@@ -45,6 +64,7 @@ public class MemoryCache
     {
         if (TryGet<T>(key, out var hit))
         {
+            Interlocked.Increment(ref _hits);
             return hit;
         }
 
@@ -56,9 +76,11 @@ public class MemoryCache
             {
                 if (TryGet<T>(key, out hit))
                 {
+                    Interlocked.Increment(ref _hits);
                     return hit;
                 }
 
+                Interlocked.Increment(ref _misses);
                 var value = await factory(cancellationToken).ConfigureAwait(false);
                 _cache[key] = new CacheEntry(value!, _timeProvider.GetUtcNow().Add(ttl));
                 Evict();

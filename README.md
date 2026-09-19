@@ -96,6 +96,17 @@ codec is H.264 — the Android app — has to re-encode VP9/Opus for the whole
 talk. Preferring MP4, or the setting above, keeps the default version one that
 every client streams untouched while WebM stays selectable.
 
+### Status
+
+The same page reports what the plugin currently believes to be true: the
+endpoint in effect, when the sync task last ran and how long it took, what the
+API and probe caches hold and how often they answer. Three actions cost
+something and therefore only run when clicked — **Check endpoint now** (does
+the endpoint answer, and how fast), **Clear caches** (the same invalidation a
+configuration change triggers) and **Check a talk**, which resolves one talk
+the way playback does (API lookup → recording choice → signed proxy url →
+proxy request → probe) and names the stage that fails.
+
 ### Scheduled Sync
 
 The plugin automatically syncs conference data every **6 hours** via a scheduled task.

@@ -48,4 +48,38 @@ public class ConfigPageTests
         Assert.InRange(scriptStart, pageStart, pageEnd);
         Assert.InRange(scriptEnd, scriptStart, pageEnd);
     }
+
+    /// <summary>
+    /// Opening the configuration page must not reach media.ccc.de or run ffprobe: the
+    /// status the page loads by itself is read from counters the plugin already keeps.
+    /// </summary>
+    [Fact]
+    public void ConfigPageRunsTheExpensiveChecksOnlyOnClick()
+    {
+        var (_, html) = LoadConfigPage();
+
+        var onPageShow = html[html.IndexOf("'pageshow'", StringComparison.Ordinal)..
+            html.IndexOf("#ChaosflixRefresh", StringComparison.Ordinal)];
+
+        Assert.Contains("loadStatus()", onPageShow, StringComparison.Ordinal);
+        Assert.DoesNotContain("CheckApi", onPageShow, StringComparison.Ordinal);
+        Assert.DoesNotContain("CheckTalk", onPageShow, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A button without an explicit type submits the form it sits in, which would save
+    /// the configuration every time someone runs a check.
+    /// </summary>
+    [Fact]
+    public void StatusButtonsDoNotSubmitTheForm()
+    {
+        var (_, html) = LoadConfigPage();
+
+        var buttons = Regex.Matches(html, "<button[^>]*id=\"Chaosflix[^\"]*\"[^>]*>")
+            .Select(match => match.Value)
+            .ToList();
+
+        Assert.NotEmpty(buttons);
+        Assert.All(buttons, button => Assert.Contains("type=\"button\"", button, StringComparison.Ordinal));
+    }
 }

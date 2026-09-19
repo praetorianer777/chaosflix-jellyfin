@@ -22,7 +22,12 @@ public class ChaosflixServiceRegistrator : IPluginServiceRegistrator
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
         serviceCollection.AddSingleton<CccApiClient>();
-        serviceCollection.AddSingleton<IChannel, ChaosflixChannel>();
+
+        // The status endpoint reports this channel's caches, so it has to reach the very
+        // instance Jellyfin serves from — registering the class twice would give it a
+        // second one with empty caches.
+        serviceCollection.AddSingleton<ChaosflixChannel>();
+        serviceCollection.AddSingleton<IChannel>(sp => sp.GetRequiredService<ChaosflixChannel>());
         serviceCollection.AddHostedService<ChaosflixUserDataMirror>();
     }
 }

@@ -22,6 +22,11 @@ public class ChaosflixSyncTask : IScheduledTask
     /// </summary>
     public static readonly TimeSpan SyncInterval = TimeSpan.FromHours(6);
 
+    /// <summary>
+    /// Identifier the server files this task under; the status endpoint looks it up by it.
+    /// </summary>
+    public const string TaskKey = "ChaosflixSync";
+
     private readonly CccApiClient _apiClient;
     private readonly ILogger<ChaosflixSyncTask> _logger;
 
@@ -38,7 +43,7 @@ public class ChaosflixSyncTask : IScheduledTask
     public string Name => "Chaosflix: Sync CCC Media";
 
     /// <inheritdoc />
-    public string Key => "ChaosflixSync";
+    public string Key => TaskKey;
 
     /// <inheritdoc />
     public string Description => "Refreshes the conference and talk cache from media.ccc.de";
