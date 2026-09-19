@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-19
+
+### Features
+
+- show the plugin's state on its configuration page (#93) (450f8df)
+
+### Other
+
+- add a troubleshooting section to the README (d8d98bc)
+- attach the subtitles media.ccc.de publishes (#94) (d1fdcc6)
+- check the real media.ccc.de against what the plugin reads (#92) (fe92a11)
+- run the suite against the newest Jellyfin nightly (#83) (e89af27)
+- offer a default version no client has to re-encode (#84) (67ed8bd)
+
 ## [0.2.0] - 2026-09-19
 
 ### Features

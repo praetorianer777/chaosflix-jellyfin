@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg",
     "versions": [
       {
+        "version": "0.3.0.0",
+        "changelog": "Features:\n- show the plugin's state on its configuration page (#93)\nPlus 5 other changes.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.3.0/chaosflix-jellyfin-v0.3.0.zip",
+        "checksum": "",
+        "timestamp": "2026-09-19T14:42:40Z"
+      },
+      {
         "version": "0.2.0.0",
         "changelog": "Features:\n- offer every recording as a selectable version (#74)\nBug fixes:\n- detect the login route by url, not by #loginPage (#78)\n- read a command's arguments without its redirections (#77)\n- keep the recently added row to one copy per talk (#73)\n- stop releases from a checkout behind the remote (#66)\n- and 1 more\nPlus 2 other changes.",
         "targetAbi": "10.11.0.0",
