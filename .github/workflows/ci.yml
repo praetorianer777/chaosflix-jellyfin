@@ -29,7 +29,7 @@ env:
 
 jobs:
   tests:
-    name: tests (jellyfin ${{ matrix.jellyfin }})
+    name: tests (jellyfin ${{ matrix.jellyfin.tag }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -38,10 +38,12 @@ jobs:
         # && binds tighter than ||, so the scheduled check has to be one
         # parenthesised term: without it the expression yields a boolean and
         # fromJSON fails.
-        jellyfin: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["10.11.7", "latest"]' || '["10.11.7"]') }}
+        # Each leg carries a slug as well as the tag: a compose project name may
+        # not contain dots, and "10.11.7" does.
+        jellyfin: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '[{"tag":"10.11.7","slug":"pinned"},{"tag":"latest","slug":"latest"}]' || '[{"tag":"10.11.7","slug":"pinned"}]') }}
     env:
-      JELLYFIN_TAG: ${{ matrix.jellyfin }}
-      COMPOSE_PROJECT_NAME: chaosflix-e2e-ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.jellyfin }}
+      JELLYFIN_TAG: ${{ matrix.jellyfin.tag }}
+      COMPOSE_PROJECT_NAME: chaosflix-e2e-ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.jellyfin.slug }}
     steps:
       - uses: actions/checkout@v4
 
@@ -102,7 +104,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           # Two legs upload on a nightly run; identical names collide.
-          name: playwright-report-${{ matrix.jellyfin }}
+          name: playwright-report-${{ matrix.jellyfin.slug }}
           path: |
             e2e/playwright-report
             e2e/test-results
