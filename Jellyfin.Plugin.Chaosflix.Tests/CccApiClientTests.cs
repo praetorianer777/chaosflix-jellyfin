@@ -89,6 +89,33 @@ public class CccApiClientTests
     }
 
     [Fact]
+    public async Task GetConferenceEscapesTheAcronym()
+    {
+        // 'Panoptische _Prinzip' is live on media.ccc.de and answers only as %20 (#102).
+        _api.Json(
+            "/public/conferences/Panoptische%20_Prinzip",
+            TestData.Conference("Panoptische _Prinzip", null, TestData.Event("e1")));
+        var client = _api.CreateApiClient();
+
+        var conference = await client.GetConferenceAsync("Panoptische _Prinzip", CancellationToken.None);
+
+        Assert.Equal("e1", Assert.Single(conference!.Events!).Guid);
+        Assert.Equal("/public/conferences/Panoptische%20_Prinzip", _api.Requests.Single());
+    }
+
+    [Fact]
+    public async Task GetEventEscapesTheGuid()
+    {
+        _api.Json("/public/events/weird%20guid%2F1", TestData.Event("weird guid/1"));
+        var client = _api.CreateApiClient();
+
+        var cccEvent = await client.GetEventAsync("weird guid/1", CancellationToken.None);
+
+        Assert.Equal("weird guid/1", cccEvent!.Guid);
+        Assert.Equal("/public/events/weird%20guid%2F1", _api.Requests.Single());
+    }
+
+    [Fact]
     public async Task ServerErrorsPropagateAndAreNotCached()
     {
         _api.Status("/public/conferences", HttpStatusCode.InternalServerError);

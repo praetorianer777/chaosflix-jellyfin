@@ -88,7 +88,7 @@ public class CccApiClient : IDisposable
         {
             _logger.LogDebug("Fetching conference {Acronym} from CCC API", acronym);
             return await _httpClient
-                .GetFromJsonAsync<CccConference>(Url($"/conferences/{acronym}"), ct)
+                .GetFromJsonAsync<CccConference>(Url($"/conferences/{Uri.EscapeDataString(acronym)}"), ct)
                 .ConfigureAwait(false);
         }, cancellationToken);
     }
@@ -124,7 +124,7 @@ public class CccApiClient : IDisposable
             try
             {
                 return await _httpClient
-                    .GetFromJsonAsync<CccEvent>(Url($"/events/{guid}"), ct)
+                    .GetFromJsonAsync<CccEvent>(Url($"/events/{Uri.EscapeDataString(guid)}"), ct)
                     .ConfigureAwait(false);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)

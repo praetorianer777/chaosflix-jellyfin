@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using Jellyfin.Plugin.Chaosflix.Api;
 using Xunit;
 
@@ -84,6 +83,12 @@ public sealed class CccApiContractTests : IClassFixture<CccApiLiveFixture>
     /// <summary>
     /// Jellyfin seeks by asking for byte ranges. A mirror that ignores Range would play from the
     /// start on every seek, so range support is part of the contract, not a nicety.
+    ///
+    /// What is asserted is the answer to a ranged GET, not an <c>Accept-Ranges</c> advertisement:
+    /// <see cref="ChaosflixStreamController"/> forwards the Range header to whatever mirror the CDN
+    /// named and never reads Accept-Ranges, and it sets <c>Accept-Ranges: bytes</c> on its own
+    /// response itself. nginx (which every ccc mirror runs) omits the header from a 206 because it
+    /// is redundant there, so requiring it made the suite fail on mirrors that seek perfectly well.
     /// </summary>
     [ContractFact]
     public void Mirror_SupportsRangeRequests()
@@ -96,10 +101,6 @@ public sealed class CccApiContractTests : IClassFixture<CccApiLiveFixture>
             cdn.RangeStatus == 206,
             $"A ranged GET on {cdn.MirrorUrl} answered {cdn.RangeStatus} instead of 206; "
             + "seeking would restart the stream.");
-        Assert.True(
-            cdn.AcceptRanges.Any(v => string.Equals(v, "bytes", StringComparison.OrdinalIgnoreCase)),
-            $"{cdn.MirrorUrl} does not advertise 'Accept-Ranges: bytes' (got: "
-            + $"{(cdn.AcceptRanges.Count == 0 ? "nothing" : string.Join(", ", cdn.AcceptRanges))}).");
         Assert.True(
             cdn.ContentRange != null,
             $"{cdn.MirrorUrl} answered 206 without a Content-Range header.");

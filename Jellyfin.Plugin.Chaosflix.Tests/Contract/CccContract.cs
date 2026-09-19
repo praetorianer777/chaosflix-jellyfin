@@ -25,14 +25,14 @@ public static class CccContract
 
         foreach (var conference in conferences)
         {
-            // Every browsing path builds /conferences/{acronym} from this, so a blank or
-            // path-unsafe acronym makes the conference unreachable rather than merely ugly.
+            // Every browsing path builds /conferences/{acronym} from this, so an acronym that
+            // cannot become one path segment makes the conference unreachable.
             Assert.True(
                 !string.IsNullOrWhiteSpace(conference.Acronym),
                 Missing("acronym", Describe(conference)));
             Assert.True(
-                conference.Acronym.IndexOfAny(new[] { '/', '?', '#', ' ' }) < 0,
-                $"Conference acronym '{conference.Acronym}' is not usable in a URL path any more.");
+                IsUsablePathSegment(conference.Acronym),
+                $"Conference acronym '{conference.Acronym}' cannot be a single URL path segment.");
             Assert.True(
                 !string.IsNullOrWhiteSpace(conference.Title),
                 Missing("title", Describe(conference)));
@@ -160,8 +160,9 @@ public static class CccContract
                 !string.IsNullOrWhiteSpace(related.EventGuid),
                 $"A related entry of event {cccEvent.Guid} has no event_guid.");
             Assert.True(
-                Guid.TryParse(related.EventGuid, out _),
-                $"Related event_guid '{related.EventGuid}' of event {cccEvent.Guid} is not a GUID.");
+                IsUsablePathSegment(related.EventGuid),
+                $"Related event_guid '{related.EventGuid}' of event {cccEvent.Guid} cannot be a "
+                + "single URL path segment; the folder fetches each entry by that guid.");
             Assert.True(
                 related.Weight > 0,
                 $"Related entry {related.EventGuid} of event {cccEvent.Guid} has weight {related.Weight}; "
@@ -175,8 +176,9 @@ public static class CccContract
             !string.IsNullOrWhiteSpace(cccEvent.Guid),
             Missing("guid", $"event '{cccEvent.Title}'"));
         Assert.True(
-            Guid.TryParse(cccEvent.Guid, out _),
-            $"Event guid '{cccEvent.Guid}' is not a GUID; the channel builds item ids from it.");
+            IsUsablePathSegment(cccEvent.Guid),
+            $"Event guid '{cccEvent.Guid}' cannot be a single URL path segment; "
+            + "it addresses /events/{guid} and the proxy route /Chaosflix/Stream/proxy/{guid}.");
         Assert.True(
             !string.IsNullOrWhiteSpace(cccEvent.Title),
             Missing("title", $"event {cccEvent.Guid}"));
@@ -233,6 +235,16 @@ public static class CccContract
             events.Any(predicate),
             $"Not one of the {events.Count} events of conference '{acronym}' has a usable '{field}'.");
     }
+
+    /// <summary>
+    /// Whether an identifier can address one resource on its own. The plugin escapes every
+    /// identifier it interpolates into a url with <see cref="Uri.EscapeDataString"/>, so only a
+    /// slash is fatal: escaped it stops being a separator, unescaped it splits the segment. The
+    /// API's own identifiers are not GUIDs — <c>import-7bc2b53aa12cb15369</c> and the acronym
+    /// <c>Panoptische _Prinzip</c> are both live and both resolve once escaped.
+    /// </summary>
+    private static bool IsUsablePathSegment(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && !value.Contains('/', StringComparison.Ordinal);
 
     private static bool IsAbsoluteHttpUrl(string? url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var parsed)
