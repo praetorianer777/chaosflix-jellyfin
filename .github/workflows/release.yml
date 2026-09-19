@@ -85,13 +85,22 @@ jobs:
             echo "Release ${GITHUB_REF_NAME}" > notes.md
           fi
 
-      - name: Create the GitHub release
+      # Re-runnable on purpose: a failure in a later step used to be
+      # unrecoverable, because re-running the job started here and gh refused an
+      # existing release, leaving the checksum unrecorded (#100).
+      - name: Create or update the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          ASSET: ${{ steps.zip.outputs.name }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" "${{ steps.zip.outputs.name }}" \
-            --title "${GITHUB_REF_NAME}" \
-            --notes-file notes.md
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "release ${GITHUB_REF_NAME} exists; uploading the asset again"
+            gh release upload "${GITHUB_REF_NAME}" "${ASSET}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${ASSET}" \
+              --title "${GITHUB_REF_NAME}" \
+              --notes-file notes.md
+          fi
 
       # The checksum is taken from the asset as it was downloaded back from the
       # release, and it lands on the default branch rather than on the tag: a

@@ -127,6 +127,13 @@ case "$1" in
     log)
         [[ -n "${FAKE_LOG:-}" && -s "${FAKE_LOG}" ]] && cat "${FAKE_LOG}"
         ;;
+    rev-parse)
+        # release.sh checks it is on the default branch before anything else.
+        [[ "$*" == *"--abbrev-ref HEAD"* ]] && echo "${FAKE_BRANCH:-main}"
+        ;;
+    symbolic-ref)
+        echo "origin/main"
+        ;;
 esac
 exit 0
 EOF
@@ -252,7 +259,7 @@ run_release() {
     : > "${VCS_LOG}"
     (cd "${SANDBOX}" && PATH="${SANDBOX}/bin:${PATH}" VCS_LOG="${VCS_LOG}" \
         FAKE_LOG="${FAKE_LOG}" FAKE_PREV_TAG="${prev_tag}" \
-        FAKE_PREV_ABI="${FAKE_PREV_ABI:-}" \
+        FAKE_PREV_ABI="${FAKE_PREV_ABI:-}" FAKE_BRANCH="${FAKE_BRANCH:-}" \
         ./release.sh "$@") > "${WORK}/out.log" 2>&1
 }
 
@@ -575,6 +582,23 @@ else
     fail "the dry run prints the notes it would write"
 fi
 
+reset_fixture
+
+echo ""
+echo "🧪 release.sh — a release off the default branch is refused"
+reset_fixture
+log_reset
+log_entry 1111111111111111111111111111111111111111 "fix: something"
+if FAKE_BRANCH="docs/12-something" run_release "v0.0.29"; then
+    fail "a release from a feature branch is refused"
+else
+    pass "a release from a feature branch is refused"
+fi
+if grep -q "releases are cut from" "${WORK}/out.log"; then
+    pass "the refusal names the branch releases come from"
+else
+    fail "the refusal names the branch releases come from"
+fi
 reset_fixture
 
 # ── The files that are actually published ────────────────

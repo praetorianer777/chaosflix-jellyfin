@@ -63,6 +63,18 @@ fi
 # A release built from a stale checkout tags code the remote does not have:
 # the tag pushes, the branch is rejected, and the workflow publishes the old
 # build with a manifest entry nobody can see (#64).
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+DEFAULT_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
+if [[ "${BRANCH}" != "${DEFAULT_BRANCH}" ]]; then
+    # A release cut from a feature branch tags a commit the default branch does
+    # not have: the asset publishes, but the manifest entry the workflow needs
+    # lives only on that branch, so the checksum step fails (#100).
+    echo "❌ Releasing from '${BRANCH}', but releases are cut from '${DEFAULT_BRANCH}'."
+    echo "   git checkout ${DEFAULT_BRANCH} && git merge --ff-only origin/${DEFAULT_BRANCH}"
+    exit 1
+fi
+
 UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
 if [[ -n "${UPSTREAM}" ]]; then
     git fetch --quiet "${UPSTREAM%%/*}" || echo "   ⚠️  could not reach ${UPSTREAM%%/*}, checking against the last fetch"
