@@ -13,7 +13,7 @@
         "changelog": "Features:\n- show the plugin's state on its configuration page (#93)\nPlus 5 other changes.",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.3.0/chaosflix-jellyfin-v0.3.0.zip",
-        "checksum": "",
+        "checksum": "b4b7c4d4eeac9e4277957e966c311210",
         "timestamp": "2026-09-19T14:42:40Z"
       },
       {
