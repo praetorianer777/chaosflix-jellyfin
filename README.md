@@ -103,6 +103,17 @@ Go to **Dashboard → Plugins → Chaosflix** to set:
 | Preferred Format | MP4 (H.264) / WebM (VP9) | MP4 |
 | Preferred Language | Original / Deutsch / English | Original |
 | Start on a version every client can play untouched | on / off | off |
+| Conferences | comma-separated list | empty — every conference |
+
+**Conferences** narrows the whole channel to what you actually follow.
+media.ccc.de publishes hundreds of them, and Browse by Year lists every one.
+An entry is either a series as it appears in a media.ccc.de address —
+`congress` for `media.ccc.de/c/congress/2025`, and likewise `gpn`,
+`easterhegg` — which keeps every edition including the ones not announced yet,
+or a single acronym like `38c3`. The filter also applies to Popular,
+Recommended and the latest row, so they are drawn from the same conferences as
+the folders, and the plugin stops fetching the details of everything else.
+Left empty, nothing is filtered.
 
 Every recording of a talk is offered as its own version ("HD MP4 · Deutsch",
 "SD WebM · English") in the player's version selector; these settings decide

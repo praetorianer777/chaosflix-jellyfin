@@ -197,6 +197,7 @@ test.describe("plugin installation", () => {
 		await setPluginConfig(api, {
 			PreferredQuality: "High",
 			PreferredLanguage: "",
+			ConferenceFilter: "",
 			ApiBaseUrl: FAKE_API,
 		});
 
@@ -207,22 +208,26 @@ test.describe("plugin installation", () => {
 		await expect(page.locator("#ApiBaseUrl")).toHaveValue(FAKE_API);
 		await expect(page.locator("#PreferredQuality")).toHaveValue("High");
 		await expect(page.locator("#PreferredLanguage")).toHaveValue("");
+		await expect(page.locator("#ConferenceFilter")).toHaveValue("");
 
 		await page.locator("#PreferredQuality").selectOption("Standard");
 		await page.locator("#PreferredLanguage").selectOption("eng");
+		await page.locator("#ConferenceFilter").fill("congress, 38c3");
 		await page.getByRole("button", { name: /save/i }).click();
 
 		await expect
 			.poll(async () => {
 				const config = await getPluginConfig(api);
-				return `${config.PreferredQuality}/${config.PreferredLanguage}/${config.ApiBaseUrl}`;
+				return `${config.PreferredQuality}/${config.PreferredLanguage}/${config.ConferenceFilter}/${config.ApiBaseUrl}`;
 			})
-			.toBe(`Standard/eng/${FAKE_API}`);
+			.toBe(`Standard/eng/congress, 38c3/${FAKE_API}`);
 
-		// Later specs expect the defaults the global setup installed.
+		// Later specs expect the defaults the global setup installed — the filter
+		// above would hide the fixture conference from every one of them.
 		await setPluginConfig(api, {
 			PreferredQuality: "High",
 			PreferredLanguage: "",
+			ConferenceFilter: "",
 		});
 	});
 });

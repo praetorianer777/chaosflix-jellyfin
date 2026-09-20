@@ -31,6 +31,14 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool CompatibleDefaultVersion { get; set; }
 
     /// <summary>
+    /// Gets or sets the conferences to show, separated by commas or newlines. An entry
+    /// is either an acronym ("38c3") or a series as media.ccc.de files it in the slug
+    /// ("congress", "gpn"), which also covers the editions not published yet.
+    /// Empty means every conference, which is what the plugin did before this existed.
+    /// </summary>
+    public string ConferenceFilter { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the CCC API endpoint. Empty means the public API at media.ccc.de;
     /// set it to use a mirror or, in the e2e tests, a local stand-in.
     /// </summary>

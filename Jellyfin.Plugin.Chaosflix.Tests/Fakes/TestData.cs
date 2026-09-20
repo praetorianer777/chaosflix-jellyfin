@@ -4,11 +4,15 @@ namespace Jellyfin.Plugin.Chaosflix.Tests.Fakes;
 
 public static class TestData
 {
-    public static CccConference Conference(string acronym, DateTimeOffset? lastReleased, params CccEvent[] events) => new()
+    public static CccConference Conference(string acronym, DateTimeOffset? lastReleased, params CccEvent[] events) =>
+        Conference(acronym, lastReleased, null, events);
+
+    public static CccConference Conference(
+        string acronym, DateTimeOffset? lastReleased, string? slug, params CccEvent[] events) => new()
     {
         Acronym = acronym,
         Title = acronym.ToUpperInvariant(),
-        Slug = acronym,
+        Slug = slug ?? acronym,
         Description = $"{acronym} description",
         LogoUrl = $"https://static.media.ccc.de/{acronym}.png",
         EventLastReleasedAt = lastReleased,
