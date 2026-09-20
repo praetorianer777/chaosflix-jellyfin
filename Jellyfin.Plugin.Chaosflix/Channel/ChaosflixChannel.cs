@@ -323,6 +323,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         var items = allEvents
             .OrderByDescending(e => e.ViewCount)
+            .ThenBy(e => e.Guid, StringComparer.Ordinal)
             .Take(50)
             .Select(e => MapEventToChannelItem(e, ScopePopular))
             .ToList();
@@ -352,15 +353,19 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             }
         }
 
-        // Score: views * recency boost
-        var now = DateTimeOffset.UtcNow;
+        // Score: views * recency boost, in whole days. A continuous age moves the
+        // score between two refreshes that see identical data, so the talks either
+        // side of the cut swap places and Jellyfin removes and re-adds them every
+        // time — and logs a missing image for the copy it has just deleted (#62).
+        var now = _timeProvider.GetUtcNow();
         var items = allEvents
             .Where(e => e.ViewCount > 100)
             .OrderByDescending(e =>
             {
-                var ageDays = Math.Max(1, (now - (e.ReleaseDate ?? e.Date ?? now)).TotalDays);
+                var ageDays = Math.Max(1, Math.Floor((now - (e.ReleaseDate ?? e.Date ?? now)).TotalDays));
                 return e.ViewCount / Math.Sqrt(ageDays);
             })
+            .ThenBy(e => e.Guid, StringComparer.Ordinal)
             .Take(30)
             .Select(e => MapEventToChannelItem(e, ScopeRecommended))
             .ToList();

@@ -215,7 +215,7 @@ public class ChaosflixChannelTests
     [Fact]
     public async Task RecommendedFiltersLowViewsAndFavoursRecentTalks()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = FakeTime.Start;
         Conferences(Conference("c", Day(2025)));
         _api.Json("/public/conferences/c", Conference("c", Day(2025),
             Event("too-few-views", views: 100, releaseDate: now.AddDays(-1)),
@@ -225,6 +225,55 @@ public class ChaosflixChannelTests
         var result = await Items("virtual:recommended");
 
         Assert.Equal(new[] { "event:recommended:fresh", "event:recommended:old-popular" }, result.Items.Select(i => i.Id));
+    }
+
+    [Fact]
+    public async Task RecommendedHoldsStillBetweenRefreshesOnTheSameDay()
+    {
+        var now = FakeTime.Start;
+        Conferences(Conference("c", Day(2025)));
+        _api.Json("/public/conferences/c", Conference("c", Day(2025),
+            Event("younger", views: 1_000, releaseDate: now.AddDays(-1)),
+            Event("older", views: 1_400, releaseDate: now.AddDays(-2))));
+
+        var before = (await Items("virtual:recommended")).Items.Select(i => i.Id).ToList();
+        _time.Advance(TimeSpan.FromHours(12));
+        var after = (await Items("virtual:recommended")).Items.Select(i => i.Id).ToList();
+
+        Assert.Equal(new[] { "event:recommended:younger", "event:recommended:older" }, before);
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
+    public async Task RecommendedStillReordersOnceTheDayTurns()
+    {
+        var now = FakeTime.Start;
+        Conferences(Conference("c", Day(2025)));
+        _api.Json("/public/conferences/c", Conference("c", Day(2025),
+            Event("younger", views: 1_000, releaseDate: now.AddDays(-1)),
+            Event("older", views: 1_400, releaseDate: now.AddDays(-2))));
+
+        await Items("virtual:recommended");
+        _time.Advance(TimeSpan.FromDays(1));
+        var result = await Items("virtual:recommended");
+
+        Assert.Equal(
+            new[] { "event:recommended:older", "event:recommended:younger" },
+            result.Items.Select(i => i.Id));
+    }
+
+    [Fact]
+    public async Task PopularOrdersTalksOfEqualViewCountTheSameWayEveryTime()
+    {
+        Conferences(Conference("c", Day(2025)));
+        _api.Json("/public/conferences/c", Conference("c", Day(2025),
+            Event("b", views: 500), Event("a", views: 500), Event("c", views: 500)));
+
+        var first = (await Items("virtual:popular")).Items.Select(i => i.Id).ToList();
+
+        Assert.Equal(
+            new[] { "event:popular:a", "event:popular:b", "event:popular:c" },
+            first);
     }
 
     [Fact]
@@ -922,7 +971,9 @@ public class ChaosflixChannelTests
 
     private sealed class FakeTime : TimeProvider
     {
-        private DateTimeOffset _now = new(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        public static readonly DateTimeOffset Start = new(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        private DateTimeOffset _now = Start;
 
         public override DateTimeOffset GetUtcNow() => _now;
 
