@@ -12,8 +12,9 @@ SRC="$(cd "$(dirname "$0")/../../.." && pwd)"
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 git clone -q "$SRC" "$W/r" && cd "$W/r"
-git switch -q main && cp -r "$SRC/.claude" . && cp "$SRC/run-tests.sh" .
+git switch -q main && cp -r "$SRC/.claude" . && cp "$SRC/run-tests.sh" . && git add -A && git commit -qm fixture
 export CLAUDE_PROJECT_DIR="$W/r"
+git config user.email t@example.com && git config user.name Tester
 G="git"; C="commit"
 fail=0
 
@@ -76,6 +77,38 @@ check allow Bash  "$G checkout README.md && $G $C -m x"
 check deny  Bash  "$G checkout main && $G $C -m x"
 check deny  Bash  "$G push origin main"
 
+# ── Detached HEAD during a rebase (#97) ─────────────────────────
+# A conflicted rebase is judged by the branch being rebased, not by the
+# detached HEAD it leaves behind, or it could never be finished or aborted.
+conflict() { # branch-to-rebase onto
+  git switch -q main && printf 'ours\n' > conflict.txt && git add conflict.txt && git commit -qm ours
+  git switch -qc "$1" main~1 && printf 'theirs\n' > conflict.txt && git add conflict.txt && git commit -qm theirs
+  git switch -q "$1" && git rebase -q "$2" >/dev/null 2>&1
+  rebasing "$PWD"
+}
+
+# Without this the rebase cases would still pass if the rebase never stopped.
+rebasing() {
+  git -C "$1" symbolic-ref --quiet HEAD >/dev/null \
+    && { echo "FAIL  no conflicted rebase in $1: HEAD is not detached"; fail=1; }
+}
+
+echo "== rebase of an issue branch stopped on a conflict"
+conflict fix/2-rebase main
+check allow Bash  "$G add -A"
+check allow Bash  "$G rebase --continue"
+check allow Bash  "$G rebase --abort"
+check allow Write "$W/r/conflict.txt"
+git rebase --abort >/dev/null 2>&1
+
+echo "== rebase of main stopped on a conflict"
+git switch -q main && git rebase -q fix/2-rebase >/dev/null 2>&1
+rebasing "$W/r"
+check deny  Bash  "$G add -A"
+check deny  Write "$W/r/conflict.txt"
+git rebase --abort >/dev/null 2>&1
+git switch -q fix/1-test
+
 printf '#!/bin/sh\necho stub ok\n' > run-tests.sh; chmod +x run-tests.sh
 check allow Bash  "$G push -u origin HEAD"
 printf '#!/bin/sh\necho "Failed: MemoryCacheTests.Expiry"; exit 1\n' > run-tests.sh
@@ -87,7 +120,7 @@ true
 W2=$(mktemp -d)
 trap 'rm -rf "$W" "$W2"' EXIT
 git clone -q "$SRC" "$W2/r" && cd "$W2/r"
-git switch -q main && cp -r "$SRC/.claude" . && cp "$SRC/run-tests.sh" .
+git switch -q main && cp -r "$SRC/.claude" . && cp "$SRC/run-tests.sh" . && git add -A && git commit -qm fixture
 export CLAUDE_PROJECT_DIR="$W2/r"
 G="git"; C="commit"
 fail=0
@@ -117,6 +150,19 @@ check allow Bash  "$G $C -m x" "$WT"
 check deny  Bash  "$G push origin main" "$WT"
 # The gate must run the worktree's own script: the main checkout's copy fails.
 check allow Bash  "$G push -u origin HEAD" "$WT"
+
+echo "== rebase in a worktree reads that worktree's head-name"
+printf 'ours\n' > "$W2/r/conflict.txt"
+git -C "$W2/r" add conflict.txt run-tests.sh && git -C "$W2/r" commit -qm ours
+printf 'theirs\n' > "$WT/conflict.txt"
+git -C "$WT" add conflict.txt run-tests.sh && git -C "$WT" commit -qm theirs
+git -C "$WT" rebase -q main >/dev/null 2>&1
+git -C "$WT" symbolic-ref --quiet HEAD >/dev/null \
+  && { echo "FAIL  no conflicted rebase in the worktree: HEAD is not detached"; fail=1; }
+check allow Bash  "$G add -A" "$WT"
+check allow Bash  "$G -C $WT add -A" "$W2/r"
+check deny  Bash  "$G add -A" "$W2/r"
+git -C "$WT" rebase --abort >/dev/null 2>&1
 
 echo "== worktree switched to main"
 git -C "$WT" switch -q main 2>/dev/null || git -C "$WT" checkout -q --detach
