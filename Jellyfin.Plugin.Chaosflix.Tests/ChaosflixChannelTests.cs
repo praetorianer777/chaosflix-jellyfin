@@ -140,7 +140,7 @@ public class ChaosflixChannelTests
         Assert.Equal("https://media.ccc.de/v/e1", item.HomePageUrl);
         Assert.Equal(TimeSpan.FromHours(1).Ticks, item.RunTimeTicks);
         Assert.Equal(Day(2024, 12, 28).DateTime, item.DateCreated);
-        Assert.Equal(6f, item.CommunityRating!.Value, 3);
+        Assert.Null(item.CommunityRating);
         Assert.Equal(new[] { "Security", "38c3", "Ethics" }, item.Genres);
         Assert.Equal(new[] { "Alice", "Bob" }, item.People.Select(p => p.Name));
         Assert.All(item.People, p => Assert.Equal(PersonKind.Actor, p.Type));
@@ -150,7 +150,7 @@ public class ChaosflixChannelTests
     }
 
     [Fact]
-    public async Task EventWithoutViewsHasNoRatingAndPlainOverview()
+    public async Task EventWithoutViewsHasAPlainOverview()
     {
         var ev = Event("e1");
         ev.ThumbUrl = "https://static/thumb.jpg";
@@ -159,7 +159,6 @@ public class ChaosflixChannelTests
 
         var item = Assert.Single((await Items("conf:c")).Items);
 
-        Assert.Null(item.CommunityRating);
         Assert.Equal("https://static/thumb.jpg", item.ImageUrl);
         Assert.Equal("Only description", item.Overview);
     }
