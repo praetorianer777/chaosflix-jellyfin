@@ -104,26 +104,29 @@ RANGE="HEAD"
 # occur in a subject or body, unlike any printable delimiter.
 RAW_LOG=$(git log --no-merges --format="%H%x1f%s%x1f%b%x1e" "${RANGE}" 2>/dev/null || true)
 
-# ── 0a. Next version ────────────────────────────────────
-
-# Without a version argument the number is derived from those commits (#19).
-# The reasoning is printed before anything is written, so the bump can be
-# checked before it is released.
-if [[ -z "${VERSION}" ]]; then
-    # The tagged meta.json is the only record of the targetAbi the previous
-    # release shipped with; a raise since then changes which servers may
-    # install the plugin and is therefore a MINOR on its own.
-    PREV_ABI=""
-    if [[ -n "${PREV_TAG}" ]]; then
-        PREV_ABI=$(git show "${PREV_TAG}:${META}" 2>/dev/null \
-            | python3 -c "
+# The tagged meta.json is the only record of the targetAbi the previous release
+# shipped with. A raise since then changes which servers may install the plugin:
+# it is a MINOR on its own, and it is a breaking change in the notes. Both need
+# it, so it is read here rather than inside the version inference — given a
+# version nothing is inferred, and the raise would go unreported (#112).
+PREV_ABI=""
+if [[ -n "${PREV_TAG}" ]]; then
+    PREV_ABI=$(git show "${PREV_TAG}:${META}" 2>/dev/null \
+        | python3 -c "
 import json, sys
 try:
     print(json.load(sys.stdin)['targetAbi'])
 except Exception:
     pass
 " || true)
-    fi
+fi
+
+# ── 0a. Next version ────────────────────────────────────
+
+# Without a version argument the number is derived from those commits (#19).
+# The reasoning is printed before anything is written, so the bump can be
+# checked before it is released.
+if [[ -z "${VERSION}" ]]; then
     CURRENT_VERSION=$(META="${META}" python3 -c "
 import json, os
 with open(os.environ['META']) as f:
@@ -268,6 +271,8 @@ CHANGELOG=$(
     VERSION_THREE="${VERSION_THREE}" \
     RAW_LOG="${RAW_LOG}" \
     MANUAL_CHANGELOG="${MANUAL_CHANGELOG}" \
+    PREV_ABI="${PREV_ABI}" \
+    TARGET_ABI="${TARGET_ABI}" \
     RELEASE_DATE="$(date -u +%Y-%m-%d)" \
     NOTES_FILE="${NOTES_FILE}" \
     CHANGELOG_FILE="${CHANGELOG_FILE}" \
@@ -281,6 +286,8 @@ version = os.environ['VERSION_THREE']
 release_date = os.environ['RELEASE_DATE']
 manual = os.environ.get('MANUAL_CHANGELOG', '')
 raw = os.environ.get('RAW_LOG', '')
+prev_abi = os.environ.get('PREV_ABI', '')
+target_abi = os.environ.get('TARGET_ABI', '')
 notes_path = os.environ['NOTES_FILE']
 changelog_path = os.environ['CHANGELOG_FILE']
 
@@ -297,6 +304,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 """
+
+
+def raised_minimum(previous, current):
+    """The server versions this release drops, said plainly.
+
+    targetAbi is the minimum server version that may install the plugin, and it
+    has no upper bound. Raising it is the only way to keep a build away from
+    servers it no longer supports, and those servers stay on the release before
+    it without being told. That belongs at the top of the notes, not under
+    whatever type the commit that changed it happened to carry (#112).
+    """
+    def parts(value):
+        try:
+            return tuple(int(piece) for piece in value.split('.'))
+        except ValueError:
+            return ()
+
+    before, after = parts(previous), parts(current)
+    if not before or not after or after <= before:
+        return ''
+
+    def server(value):
+        return '.'.join(value.split('.')[:3])
+
+    return 'requires Jellyfin %s or newer (raised from %s)' % (
+        server(current), server(previous))
 
 
 def collect(log):
@@ -342,7 +375,9 @@ def markdown(sections):
             continue
         out.append('### %s' % title)
         out.append('')
-        out += ['- %s (%s)' % item for item in sections[title]]
+        # The raised-minimum entry stands for no commit, so it carries no sha.
+        out += ['- %s (%s)' % item if item[1] else '- %s' % item[0]
+                for item in sections[title]]
         out.append('')
     if not out:
         return '- No changes recorded since the previous release.'
@@ -374,6 +409,9 @@ if manual:
     short = manual
 else:
     sections = collect(raw)
+    raised = raised_minimum(prev_abi, target_abi)
+    if raised:
+        sections[BREAKING].insert(0, (raised, ''))
     body = markdown(sections)
     short = compact(sections) or 'Release v%s' % version
 

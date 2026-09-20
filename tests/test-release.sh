@@ -519,6 +519,57 @@ check "the targetAbi rule is printed" \
     "$(grep -c 'targetAbi raised (10.11.0.0 → 10.12.0.0) → MINOR' "${WORK}/out.log" || true)" "1"
 FAKE_PREV_ABI=""
 
+echo "🧪 release.sh — a raised targetAbi leads the notes as a breaking change"
+reset_fixture
+sed -i 's|"targetAbi": "10.11.0.0"|"targetAbi": "12.1.0.0"|' \
+    "${SANDBOX}/Jellyfin.Plugin.Chaosflix/meta.json"
+log_reset
+log_entry 3131313131313131313131313131313131313131 \
+    "chore: require Jellyfin 12.1 and build against net10.0"
+FAKE_PREV_ABI="10.11.0.0"
+# The version is given by hand on purpose: that skips the inference, which is
+# where the previous targetAbi used to be read. The raise has to be reported
+# either way (#112).
+if ! run_release "v0.0.29" 0.4.0; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+ABI_NOTES="${SANDBOX}/release-notes-v0.4.0.md"
+check "the raise is the first section of the notes" \
+    "$(grep -m1 '^### ' "${ABI_NOTES}")" "### Breaking changes"
+check "the raise names the server versions on both sides" \
+    "$(grep -m1 '^- ' "${ABI_NOTES}")" \
+    "- requires Jellyfin 12.1.0 or newer (raised from 10.11.0)"
+check "the commit that raised it is still listed under its own type" \
+    "$(grep -c 'require Jellyfin 12.1 and build against net10.0' "${ABI_NOTES}")" "1"
+ABI_MANIFEST_NOTES=$(python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    print(json.load(f)[0]['versions'][0]['changelog'], end='')
+" "${SANDBOX}/manifest.json")
+case "${ABI_MANIFEST_NOTES}" in
+    "Breaking changes:"*"requires Jellyfin 12.1.0 or newer"*)
+        pass "the catalogue entry leads with the raise" ;;
+    *)
+        fail "the catalogue entry leads with the raise: got [${ABI_MANIFEST_NOTES}]" ;;
+esac
+FAKE_PREV_ABI=""
+
+echo "🧪 release.sh — an unchanged targetAbi says nothing about it"
+reset_fixture
+log_reset
+log_entry 3232323232323232323232323232323232323232 "fix: a small thing"
+FAKE_PREV_ABI="10.11.0.0"
+if ! run_release "v0.0.29" 0.0.31; then
+    echo "   ❌ release.sh exited non-zero"
+    cat "${WORK}/out.log"
+    exit 1
+fi
+check "no breaking section when the minimum is unchanged" \
+    "$(grep -c 'Breaking changes' "${SANDBOX}/release-notes-v0.0.31.md" || true)" "0"
+FAKE_PREV_ABI=""
+
 echo "🧪 release.sh — an empty history aborts without touching anything"
 reset_fixture
 log_reset
