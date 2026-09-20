@@ -17,7 +17,7 @@ services:
       retries: 15
 
   jellyfin:
-    image: jellyfin/jellyfin:${JELLYFIN_TAG:-10.11.7}
+    image: jellyfin/jellyfin:${JELLYFIN_TAG:-12.1}
     ports:
       - "${JELLYFIN_PORT:-8097}:8096"
     environment:

@@ -47,7 +47,7 @@ ffmpeg_run() {
         # Mounted at its host path so the arguments need no rewriting.
         docker run --rm --user "$(id -u):$(id -g)" -v "$MEDIA_DIR:$MEDIA_DIR" \
             --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg \
-            jellyfin/jellyfin:"${JELLYFIN_TAG:-10.11.7}" "$@"
+            jellyfin/jellyfin:"${JELLYFIN_TAG:-12.1}" "$@"
     fi
 }
 

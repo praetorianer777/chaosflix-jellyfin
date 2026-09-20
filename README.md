@@ -162,18 +162,19 @@ The plugin must be compiled against the same Jellyfin SDK version as your server
 ./upgrade-jellyfin.sh
 
 # Or specify a version manually
-./upgrade-jellyfin.sh 10.12.0
+./upgrade-jellyfin.sh 12.1.0
 ```
 
 Das Script:
 1. Updated NuGet-Pakete im `.csproj`
-2. Updated `targetAbi` in `manifest.json`
-3. Macht einen Test-Build via Docker
-4. Zeigt Fehler + Lösungsvorschläge bei Breaking Changes
+2. Updated `targetAbi` in `meta.json` — `release.sh` trägt ihn in `manifest.json` nach
+3. Zieht Target Framework und Docker-SDK mit, wenn der Major das verlangt
+4. Macht einen Test-Build via Docker
+5. Zeigt Fehler + Lösungsvorschläge bei Breaking Changes
 
 Danach:
 ```bash
-git add -A && git commit -m "chore: upgrade to Jellyfin 10.12.0"
+git add -A && git commit -m "chore: upgrade to Jellyfin 12.1.0"
 ./release.sh
 git push origin main --tags   # the release workflow publishes the ZIP
 ```
@@ -184,11 +185,14 @@ git push origin main --tags   # the release workflow publishes the ZIP
 # 1. Check your Jellyfin server version (Dashboard → General)
 
 # 2. Update the SDK references in the .csproj
-sed -i 's/Version="10.11.7"/Version="10.12.0"/g' \
+sed -i 's/Version="12.1.0"/Version="12.2.0"/g' \
     Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj
 
-# 3. Update targetAbi in manifest.json
-sed -i 's/"targetAbi": "10.11.0.0"/"targetAbi": "10.12.0.0"/g' manifest.json
+# 3. Update targetAbi in meta.json — the single source of truth; release.sh
+#    copies it into the manifest entry it writes. Published manifest entries
+#    keep the targetAbi their ZIP was released with and are never rewritten.
+sed -i 's/"targetAbi": "12.1.0.0"/"targetAbi": "12.2.0.0"/' \
+    Jellyfin.Plugin.Chaosflix/meta.json
 
 # 4. Release
 ./release.sh
@@ -198,7 +202,7 @@ sed -i 's/"targetAbi": "10.11.0.0"/"targetAbi": "10.12.0.0"/g' manifest.json
 
 | Änderung | Symptom | Fix |
 |----------|---------|-----|
-| Target Framework (net9→net10) | `TargetFramework 'net9.0' is not supported` | `.csproj` + Docker SDK-Image updaten |
+| Target Framework (z.B. net10→net11) | `TargetFramework 'netX.0' is not supported` | `tfm_for()` in `upgrade-jellyfin.sh` ergänzen; `.csproj`, Dockerfile und `dotnet-version` in den Workflows ziehen mit |
 | Namespace-Umbenennung | `The type or namespace 'X' does not exist` | `using`-Statements anpassen |
 | API-Signatur-Änderung | `does not contain a definition for 'X'` | Jellyfin Release Notes lesen, Code anpassen |
 | DI-Registration | Plugin wird nicht geladen | `ChaosflixServiceRegistrator.cs` prüfen |
@@ -219,7 +223,7 @@ sed -i 's/"targetAbi": "10.11.0.0"/"targetAbi": "10.12.0.0"/g' manifest.json
 ./release.sh 0.0.2
 
 # The changelog can still be written by hand; it then overrides the generated one:
-./release.sh 0.0.2 "Rebuild for Jellyfin 10.12"
+./release.sh 0.0.2 "Rebuild for Jellyfin 12.1"
 ```
 
 This updates all version strings, writes the changelog and the release notes,
@@ -285,7 +289,8 @@ published release or the live media.ccc.de, and are opt-in:
 | Android TV | `e2e/android/tv-repro.sh` | jellyfin-androidtv on a TV emulator, driven by hand |
 | Published plugin | `e2e/install/install-from-manifest.sh` | a fresh Jellyfin installing the **released** plugin from `manifest.json`, checksum included |
 
-The e2e stack is configurable: `JELLYFIN_TAG` (`latest` is 12.1), `JELLYFIN_PORT`,
+The e2e stack is configurable: `JELLYFIN_TAG` (defaults to `12.1`, the version
+`targetAbi` promises), `JELLYFIN_PORT`,
 `COMPOSE_PROJECT_NAME` and `E2E_FIXTURE_SECONDS`. Unless you set the middle two
 yourself, `run-tests.sh` picks a compose project and a host port from the path of
 the checkout it runs in, so several worktrees can run the suite side by side.

@@ -39,8 +39,8 @@ jobs:
         # parenthesised term: without it the expression yields a boolean and
         # fromJSON fails.
         # Each leg carries a slug as well as the tag: a compose project name may
-        # not contain dots, and "10.11.7" does.
-        jellyfin: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '[{"tag":"10.11.7","slug":"pinned"},{"tag":"latest","slug":"latest"}]' || '[{"tag":"10.11.7","slug":"pinned"}]') }}
+        # not contain dots, and "12.1" does.
+        jellyfin: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '[{"tag":"12.1","slug":"pinned"},{"tag":"latest","slug":"latest"}]' || '[{"tag":"12.1","slug":"pinned"}]') }}
     env:
       JELLYFIN_TAG: ${{ matrix.jellyfin.tag }}
       COMPOSE_PROJECT_NAME: chaosflix-e2e-ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.jellyfin.slug }}
@@ -51,7 +51,7 @@ jobs:
       # on PATH; installing the SDK here keeps the build out of a container.
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "9.0.x"
+          dotnet-version: "10.0.x"
 
       - uses: actions/setup-node@v4
         with:
