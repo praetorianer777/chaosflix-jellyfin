@@ -13,10 +13,19 @@ SRC="$(cd "$(dirname "$0")/../../.." && pwd)"
 export GIT_AUTHOR_NAME=Tester GIT_AUTHOR_EMAIL=tester@example.com
 export GIT_COMMITTER_NAME=Tester GIT_COMMITTER_EMAIL=tester@example.com
 
+# A CI checkout is a detached HEAD, so a clone of it has no branch at all and no
+# origin/main to track. Both fixtures need main and its upstream to exist, or
+# every case in this file is judged against a branch that is not there.
+fixture_main() {
+  git checkout -q -B main
+  git update-ref refs/remotes/origin/main HEAD
+  git branch -q --set-upstream-to=origin/main main
+}
+
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 git clone -q "$SRC" "$W/r" && cd "$W/r"
-git switch -q main && cp -r "$SRC/.claude" . && cp "$SRC/run-tests.sh" . && git add -A && git commit -qm fixture
+fixture_main && cp -r "$SRC/.claude" . && cp "$SRC/run-tests.sh" . && git add -A && git commit -qm fixture
 export CLAUDE_PROJECT_DIR="$W/r"
 G="git"; C="commit"
 fail=0
@@ -123,10 +132,9 @@ true
 W2=$(mktemp -d)
 trap 'rm -rf "$W" "$W2"' EXIT
 git clone -q "$SRC" "$W2/r" && cd "$W2/r"
-git switch -q main && cp -r "$SRC/.claude" . && cp "$SRC/run-tests.sh" . && git add -A && git commit -qm fixture
+fixture_main && cp -r "$SRC/.claude" . && cp "$SRC/run-tests.sh" . && git add -A && git commit -qm fixture
 export CLAUDE_PROJECT_DIR="$W2/r"
 G="git"; C="commit"
-fail=0
 
 # The worktree is a second checkout of the same repo, on a valid issue branch.
 WT="$W2/r/.claude/worktrees/agent-x"
