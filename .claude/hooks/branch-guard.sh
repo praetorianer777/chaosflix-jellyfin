@@ -75,14 +75,12 @@ syncs_with_upstream() {
 }
 is_branch() { git -C "$repo" show-ref --verify --quiet "refs/heads/$1"; }
 
-# Each checkout gets its own stack, so gates running in parallel worktrees do
-# not fight over the same port and compose project.
 run_tests() {
-  local log slot
+  local log
   log="$(mktemp)"
-  slot=$(( $(cksum <<< "$repo" | cut -d' ' -f1) % 200 ))
-  if ! (cd "$repo" && COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-chaosflix-gate-$slot}" \
-        JELLYFIN_PORT="${JELLYFIN_PORT:-$((8200 + slot))}" ./run-tests.sh) > "$log" 2>&1; then
+  # run-tests.sh gives each checkout its own stack, so gates running in
+  # parallel worktrees do not collide (#95).
+  if ! (cd "$repo" && ./run-tests.sh) > "$log" 2>&1; then
     local tail_out
     tail_out="$(tail -n 60 "$log")"
     rm -f "$log"

@@ -286,7 +286,9 @@ published release or the live media.ccc.de, and are opt-in:
 | Published plugin | `e2e/install/install-from-manifest.sh` | a fresh Jellyfin installing the **released** plugin from `manifest.json`, checksum included |
 
 The e2e stack is configurable: `JELLYFIN_TAG` (`latest` is 12.1), `JELLYFIN_PORT`,
-`COMPOSE_PROJECT_NAME` and `E2E_FIXTURE_SECONDS`.
+`COMPOSE_PROJECT_NAME` and `E2E_FIXTURE_SECONDS`. Unless you set the middle two
+yourself, `run-tests.sh` picks a compose project and a host port from the path of
+the checkout it runs in, so several worktrees can run the suite side by side.
 
 ## Continuous Integration
 
