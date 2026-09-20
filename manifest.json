@@ -13,7 +13,7 @@
         "changelog": "Breaking changes:\n- requires Jellyfin 12.1.0 or newer (raised from 10.11.0)\nBug fixes:\n- report a raised minimum server version as breaking (#113)\n- stop Popular and Recommended reshuffling on every refresh (#111)\n- stop inventing a community rating from the view count (#108)\n- judge a conflicted rebase by the branch being rebased (#106)\n- and 3 more\nPlus 3 other changes.",
         "targetAbi": "12.1.0.0",
         "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.4.0/chaosflix-jellyfin-v0.4.0.zip",
-        "checksum": "",
+        "checksum": "6c7ff793e07ce26c73a4f4c9430fee91",
         "timestamp": "2026-09-20T17:54:07Z"
       },
       {
