@@ -39,6 +39,24 @@ ask() { decide ask "$1"; }
 
 valid() { [[ "$1" =~ $BRANCH_RE ]]; }
 
+# A rebase that stops on a conflict detaches HEAD, so symbolic-ref yields
+# nothing and every git command would be refused — including the `git add` and
+# `git rebase --continue` that are the only way out. Both rebase backends record
+# the branch being rebased in head-name, which rev-parse locates for a worktree
+# too, where it does not sit under .git/ (#97).
+current_branch() {
+  local repo="$1" branch head_name d
+  branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null)" && { printf %s "$branch"; return; }
+  for d in rebase-merge rebase-apply; do
+    head_name="$(cd "$repo" 2>/dev/null && realpath -m "$(git rev-parse --git-path "$d/head-name" 2>/dev/null)")"
+    [[ -f "$head_name" ]] || continue
+    branch="$(<"$head_name")"
+    printf %s "${branch#refs/heads/}"
+    return
+  done
+  printf %s "(detached HEAD)"
+}
+
 # True for `git merge --ff-only <upstream>` / `git reset --hard <upstream>` where
 # <upstream> is exactly the tracking branch of the checked-out branch.
 syncs_with_upstream() {
@@ -81,7 +99,7 @@ case "$tool" in
     path="$(realpath -m "$path")"
     # Files outside this repo (scratchpad, memory) are not project work.
     repo="$(checkout_for "$(dirname "$path")")" || exit 0
-    branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached HEAD)')"
+    branch="$(current_branch "$repo")"
     valid "$branch" || deny "Refusing to edit $path on branch '$branch'. $HINT"
     ;;
 
@@ -89,7 +107,7 @@ case "$tool" in
     cmd="$(jq -r '.tool_input.command // empty' <<< "$input")"
     [[ -n "$cmd" ]] || exit 0
     repo="$(checkout_for "$cwd")" || exit 0
-    branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached HEAD)')"
+    branch="$(current_branch "$repo")"
 
     # Heredoc bodies and quoted strings are data (commit messages, issue
     # bodies), not commands; blank them before splitting into segments.
@@ -134,7 +152,7 @@ case "$tool" in
       target_repo="$(checkout_for "$target")" || continue
       if [[ "$target_repo" != "$repo" ]]; then
         repo="$target_repo"
-        branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo '(detached HEAD)')"
+        branch="$(current_branch "$repo")"
       fi
       sub="${t[i]:-}"
       # Redirections are not arguments of the command: "git merge --ff-only
