@@ -10,6 +10,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Compose names its project after the e2e directory, which is spelled the same in
+# every checkout, so two worktrees running the suite at once tear down each
+# other's containers and volumes and fight over the host port. Each checkout
+# takes a slot of its own instead, derived from where it lives (#95).
+SLOT=$(( $(cksum <<< "$PWD" | cut -d' ' -f1) % 200 ))
+
 PLUGIN="Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj"
 TFM=$(grep -oP '<TargetFramework>net\K[0-9.]+' "$PLUGIN")
 
@@ -49,7 +55,10 @@ done
 
 if [[ -f e2e/package.json ]]; then
     echo "🎭 Playwright e2e tests"
-    (cd e2e && npm ci && npx playwright test)
+    (cd e2e && npm ci && \
+        COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-chaosflix-e2e-$SLOT}" \
+        JELLYFIN_PORT="${JELLYFIN_PORT:-$((8200 + SLOT))}" \
+        npx playwright test)
 else
     echo "⚠️  No e2e/ Playwright suite found (see #11)"
 fi
@@ -58,7 +67,9 @@ fi
 # every push, so it only runs when explicitly asked for (see e2e/android/README.md).
 if [[ -n "${ANDROID_E2E:-}" && -x e2e/android/run.sh ]]; then
     echo "🤖 Android e2e tests"
-    e2e/android/run.sh
+    COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-chaosflix-e2e-android-$SLOT}" \
+        JELLYFIN_PORT="${JELLYFIN_PORT:-$((8600 + SLOT))}" \
+        e2e/android/run.sh
 else
     echo "⏭️  Android e2e tests skipped (set ANDROID_E2E=1 to include them)"
 fi

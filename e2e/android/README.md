@@ -109,7 +109,7 @@ Useful switches:
 | `E2E_REUSE_STACK=1` | do not start or stop docker compose |
 | `ANDROID_E2E_KEEP=1` | leave the stack and the emulator running afterwards |
 | `ANDROID_E2E_USE_RUNNING_EMULATOR=1` | use the device already attached to adb |
-| `JELLYFIN_PORT` | host port of the test server (default 8098) |
+| `JELLYFIN_PORT` | host port of the test server (default 8098, or a per-checkout port when started from `run-tests.sh`) |
 | `JELLYFIN_ANDROID_VERSION` | APK release tag (default `v2.7.3`) |
 | `E2E_FIXTURE_SECONDS` | fixture length (default 180) |
 | `E2E_FIXTURE_LONG_SECONDS` | length of the long talk (default 330) |
