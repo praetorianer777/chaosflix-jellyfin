@@ -7,13 +7,13 @@ set -euo pipefail
 #
 # Usage:
 #   ./upgrade-jellyfin.sh              # auto-detect latest Jellyfin version
-#   ./upgrade-jellyfin.sh 10.12.0      # upgrade to specific version
+#   ./upgrade-jellyfin.sh 12.1.0       # upgrade to specific version
 #
 # What it does:
 #   1. Detects the latest Jellyfin NuGet package version (or uses provided)
 #   2. Updates .csproj NuGet references
 #   3. Updates targetAbi in meta.json (release.sh copies it to manifest.json)
-#   4. Updates .NET SDK version if needed (net9.0 → net10.0 etc.)
+#   4. Updates the target framework and the Dockerfile SDK if the major needs it
 #   5. Attempts a Docker build to verify compatibility
 #   6. Reports any breaking changes / build errors
 #
@@ -26,6 +26,18 @@ set -euo pipefail
 
 CSPROJ="Jellyfin.Plugin.Chaosflix/Jellyfin.Plugin.Chaosflix.csproj"
 META="Jellyfin.Plugin.Chaosflix/meta.json"
+DOCKERFILE="Dockerfile"
+
+# Every Jellyfin major is built for one framework and a plugin has to match it,
+# so the upgrade is never the package version alone. An unknown major is left
+# alone rather than guessed at — the release notes are the only source.
+tfm_for() {
+  case "$1" in
+    10.11) echo net9.0 ;;
+    12.0 | 12.1) echo net10.0 ;;
+    *) echo "" ;;
+  esac
+}
 
 # ── Detect current version ───────────────────────────────
 
@@ -61,10 +73,16 @@ fi
 CURRENT_MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1-2)
 TARGET_MAJOR=$(echo "$TARGET_VERSION" | cut -d. -f1-2)
 
-# Map Jellyfin major version to .NET target framework
-# 10.11.x → net9.0, 10.12.x → check release notes
 CURRENT_TFM=$(grep -oP '<TargetFramework>\K[^<]+' "$CSPROJ")
+TARGET_TFM="$(tfm_for "$TARGET_MAJOR")"
 echo "📦 Current target framework:  ${CURRENT_TFM}"
+if [[ -z "$TARGET_TFM" ]]; then
+    TARGET_TFM="$CURRENT_TFM"
+    echo "⚠️  Unknown framework for Jellyfin ${TARGET_MAJOR}, keeping ${CURRENT_TFM}"
+    echo "   Check the release notes and add it to tfm_for() in this script."
+elif [[ "$TARGET_TFM" != "$CURRENT_TFM" ]]; then
+    echo "📦 Target framework:          ${TARGET_TFM}"
+fi
 
 # ── Update .csproj ───────────────────────────────────────
 
@@ -74,6 +92,14 @@ echo "✏️  Updating NuGet packages..."
 sed -i "s|Include=\"Jellyfin.Controller\" Version=\"[^\"]*\"|Include=\"Jellyfin.Controller\" Version=\"${TARGET_VERSION}\"|" "$CSPROJ"
 sed -i "s|Include=\"Jellyfin.Model\" Version=\"[^\"]*\"|Include=\"Jellyfin.Model\" Version=\"${TARGET_VERSION}\"|" "$CSPROJ"
 echo "   ✅ ${CSPROJ}"
+
+if [[ "$TARGET_TFM" != "$CURRENT_TFM" ]]; then
+    sed -i "s|<TargetFramework>${CURRENT_TFM}</TargetFramework>|<TargetFramework>${TARGET_TFM}</TargetFramework>|" "$CSPROJ"
+    sed -i "s|dotnet/sdk:${CURRENT_TFM#net}|dotnet/sdk:${TARGET_TFM#net}|" "$DOCKERFILE"
+    echo "   ✅ ${CSPROJ} (${CURRENT_TFM} → ${TARGET_TFM})"
+    echo "   ✅ ${DOCKERFILE} (SDK ${TARGET_TFM#net})"
+    echo "      the workflows pin the SDK themselves — check dotnet-version there"
+fi
 
 # ── Update targetAbi in meta.json ────────────────────────
 
@@ -98,8 +124,7 @@ echo "      manifest.json picks it up with the next ./release.sh"
 
 # ── Check if .NET SDK image needs updating ───────────────
 
-# Determine required SDK from target framework
-SDK_TAG=$(echo "$CURRENT_TFM" | sed 's/net//')
+SDK_TAG="${TARGET_TFM#net}"
 echo ""
 echo "🐳 Using Docker SDK image: mcr.microsoft.com/dotnet/sdk:${SDK_TAG}"
 
@@ -143,9 +168,8 @@ else
     echo ""
     echo "Common fixes for Jellyfin major upgrades:"
     echo ""
-    echo "  1. Target Framework change (z.B. net9.0 → net10.0):"
-    echo "     sed -i 's/<TargetFramework>net9.0/<TargetFramework>net10.0/' ${CSPROJ}"
-    echo "     Update Docker SDK: mcr.microsoft.com/dotnet/sdk:10.0"
+    echo "  1. Target Framework: this script maps it in tfm_for(); if Jellyfin"
+    echo "     ${TARGET_MAJOR} is not listed there, add it from the release notes."
     echo ""
     echo "  2. Namespace changes:"
     echo "     Check: https://github.com/jellyfin/jellyfin/releases"
@@ -158,6 +182,6 @@ else
     echo "     Check ChaosflixServiceRegistrator.cs"
     echo ""
     echo "To revert:"
-    echo "  git checkout -- ${CSPROJ} ${META}"
+    echo "  git checkout -- ${CSPROJ} ${META} ${DOCKERFILE}"
     echo ""
 fi

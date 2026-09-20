@@ -617,8 +617,15 @@ four = re.compile(r'^\d+\.\d+\.\d+\.\d+$')
 problems = []
 if not four.match(meta['targetAbi']):
     problems.append('meta targetAbi not four-part')
-if meta['targetAbi'] != manifest['versions'][0]['targetAbi']:
-    problems.append('targetAbi differs between meta.json and manifest.json')
+# meta.json says what the *next* release will require; the manifest records what
+# every published ZIP was released with. Raising the minimum server version lands
+# in meta.json first and reaches the manifest with the release after it, so meta
+# may be ahead — it may never be behind.
+def abi(v):
+    return tuple(int(part) for part in v.split('.'))
+
+if abi(meta['targetAbi']) < abi(manifest['versions'][0]['targetAbi']):
+    problems.append('meta.json targetAbi is older than the newest manifest entry')
 if meta['owner'] != manifest['owner']:
     problems.append('owner differs between meta.json and manifest.json')
 versions = [meta['version'], manifest['versions'][0]['version']]

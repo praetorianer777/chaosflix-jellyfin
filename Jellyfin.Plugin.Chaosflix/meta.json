@@ -6,7 +6,7 @@
   "owner": "praetorianer777",
   "category": "Channels",
   "version": "0.3.0.0",
-  "targetAbi": "10.11.0.0",
+  "targetAbi": "12.1.0.0",
   "status": "Active",
   "autoUpdate": true,
   "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg"
