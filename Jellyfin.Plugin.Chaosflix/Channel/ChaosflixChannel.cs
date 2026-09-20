@@ -155,8 +155,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             DefaultSortFields = new List<ChannelItemSortField>
             {
                 ChannelItemSortField.DateCreated,
-                ChannelItemSortField.Name,
-                ChannelItemSortField.CommunityRating
+                ChannelItemSortField.Name
             },
             SupportsContentDownloading = true,
             SupportsSortOrderToggle = true,
@@ -547,9 +546,6 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             Overview = BuildOverview(e),
             RunTimeTicks = (long)e.Duration * TimeSpan.TicksPerSecond,
             DateCreated = ScopedDateCreated(e.Date?.DateTime ?? e.ReleaseDate?.DateTime, scope),
-            CommunityRating = e.ViewCount > 0
-                ? Math.Min(10f, (float)Math.Log10(e.ViewCount) * 2)
-                : null,
             HomePageUrl = e.FrontendLink,
             OriginalTitle = e.Subtitle,
             SeriesName = e.ConferenceTitle
