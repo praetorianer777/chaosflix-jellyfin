@@ -984,18 +984,6 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private static string DetectContainer(CccRecording r) =>
         r.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? "mp4" : "webm";
 
-    private static string DetectVideoCodec(CccRecording r)
-    {
-        if (r.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase))
-            return "h264";
-        if (IsAv1(r))
-            return "av1";
-        return "vp9";
-    }
-
-    private static string DetectAudioCodec(CccRecording r) =>
-        r.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? "aac" : "opus";
-
     /// <summary>
     /// Names the sources of one talk, e.g. "HD MP4 · Deutsch". Versions that
     /// would share a name — the same format and language in two resolutions —
