@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
@@ -165,6 +166,14 @@ public class ChaosflixStreamController : ControllerBase
         if (!finalResponse.IsSuccessStatusCode)
         {
             // An error body is not media, so it gets neither Accept-Ranges nor a video type.
+            // The unsatisfied-range of a 416 is the exception: RFC 9110 has clients read the
+            // real size off it and ask again for a range that fits (#104).
+            if (finalResponse.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable
+                && finalResponse.Content.Headers.ContentRange != null)
+            {
+                Response.Headers["Content-Range"] = finalResponse.Content.Headers.ContentRange.ToString();
+            }
+
             return;
         }
 

@@ -141,6 +141,13 @@ public sealed partial class FakeCdn : IDisposable
                 end = Math.Min(end, long.Parse(m.Groups[2].Value));
             }
 
+            if (start >= content.Length)
+            {
+                response.StatusCode = 416;
+                response.Headers["Content-Range"] = $"bytes */{content.Length}";
+                return;
+            }
+
             response.StatusCode = 206;
             response.Headers["Content-Range"] = $"bytes {start}-{end}/{content.Length}";
         }
