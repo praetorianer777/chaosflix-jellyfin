@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-20
+
+### Breaking changes
+
+- requires Jellyfin 12.1.0 or newer (raised from 10.11.0)
+
+### Bug fixes
+
+- report a raised minimum server version as breaking (#113) (eb1046f)
+- stop Popular and Recommended reshuffling on every refresh (#111) (3b58b87)
+- stop inventing a community rating from the view count (#108) (83a0649)
+- judge a conflicted rebase by the branch being rebased (#106) (abb59ce)
+- keep the unsatisfied-range of a 416 from the mirror (#105) (ea1e951)
+- escape acronym and guid in API url paths (#103) (33d3099)
+- record the v0.3.0 checksum and make a rerun possible (#101) (ab21fea)
+
+### Other
+
+- require Jellyfin 12.1 and build against net10.0 (#110) (09fba9c)
+- drop the unused codec detection helpers (#109) (185cf41)
+- give every suite run its own compose project and port (#107) (2cc6b7b)
+
 ## [0.3.0] - 2026-09-19
 
 ### Features

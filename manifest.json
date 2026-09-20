@@ -9,44 +9,20 @@
     "imageUrl": "https://raw.githubusercontent.com/praetorianer777/chaosflix-jellyfin/main/assets/logo.svg",
     "versions": [
       {
+        "version": "0.4.0.0",
+        "changelog": "Breaking changes:\n- requires Jellyfin 12.1.0 or newer (raised from 10.11.0)\nBug fixes:\n- report a raised minimum server version as breaking (#113)\n- stop Popular and Recommended reshuffling on every refresh (#111)\n- stop inventing a community rating from the view count (#108)\n- judge a conflicted rebase by the branch being rebased (#106)\n- and 3 more\nPlus 3 other changes.",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.4.0/chaosflix-jellyfin-v0.4.0.zip",
+        "checksum": "",
+        "timestamp": "2026-09-20T17:54:07Z"
+      },
+      {
         "version": "0.3.0.0",
         "changelog": "Features:\n- show the plugin's state on its configuration page (#93)\nPlus 5 other changes.",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.3.0/chaosflix-jellyfin-v0.3.0.zip",
         "checksum": "b4b7c4d4eeac9e4277957e966c311210",
         "timestamp": "2026-09-19T14:42:40Z"
-      },
-      {
-        "version": "0.2.0.0",
-        "changelog": "Features:\n- offer every recording as a selectable version (#74)\nBug fixes:\n- detect the login route by url, not by #loginPage (#78)\n- read a command's arguments without its redirections (#77)\n- keep the recently added row to one copy per talk (#73)\n- stop releases from a checkout behind the remote (#66)\n- and 1 more\nPlus 2 other changes.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.2.0/chaosflix-jellyfin-v0.2.0.zip",
-        "checksum": "d85b11b2624950043f95475cfaaf3f3d",
-        "timestamp": "2026-09-19T07:16:38Z"
-      },
-      {
-        "version": "0.1.1.0",
-        "changelog": "Bug fixes:\n- hand out the item id as the media source id (#63)\n- end a proxied stream quietly when the client hangs up (#59)\nPlus 5 other changes.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.1.1/chaosflix-jellyfin-v0.1.1.zip",
-        "checksum": "f41d05a0b7c0c53d8b9f5e96af0f2066",
-        "timestamp": "2026-09-18T17:17:27Z"
-      },
-      {
-        "version": "0.1.0.0",
-        "changelog": "Features:\n- infer the next release version from the commits\n- generate release notes from the commit history\nBug fixes:\n- let the release workflow own the artifact and checksum (#50)\n- start the e2e stack from a clean state\n- judge -C into a nested worktree by that worktree\n- annotate the release tag with the generated notes\n- and 13 more\nPlus 8 other changes.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.1.0/chaosflix-jellyfin-v0.1.0.zip",
-        "checksum": "d0784d1070c57943930bb32fccbc7643",
-        "timestamp": "2026-09-18T12:40:08Z"
-      },
-      {
-        "version": "0.0.29.0",
-        "changelog": "Release v0.0.29",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/praetorianer777/chaosflix-jellyfin/releases/download/v0.0.29/chaosflix-jellyfin-v0.0.29.zip",
-        "checksum": "0d0374d1c63035c2db6f9e2ccbe3144b",
-        "timestamp": "2026-04-06T20:18:27Z"
       }
     ]
   }
