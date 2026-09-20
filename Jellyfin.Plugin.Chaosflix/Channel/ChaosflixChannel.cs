@@ -44,6 +44,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private const string ScopePopular = "popular";
     private const string ScopeRecommended = "recommended";
     private const string ConferenceScopePrefix = "conf-";
+    private const string GenericSlugSegment = "conferences";
 
     internal const int ProbeCacheCapacity = 128;
 
@@ -57,6 +58,8 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     /// codec. A client only keeps the url we hand it when that name matches the
     /// format in its subtitle profile, and every client spells them this way.
     /// </summary>
+    private static readonly char[] FilterSeparators = [',', ';', '\n', '\r'];
+
     private static readonly Dictionary<string, string> SubtitleCodecs = new(StringComparer.OrdinalIgnoreCase)
     {
         ["text/vtt"] = "vtt",
@@ -232,7 +235,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     /// <inheritdoc />
     public async Task<IEnumerable<ChannelItemInfo>> GetLatestMedia(ChannelLatestMediaSearch request, CancellationToken cancellationToken)
     {
-        var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
+        var conferences = await SelectedConferencesAsync(cancellationToken).ConfigureAwait(false);
 
         // Get the 3 most recently updated conferences for a broader latest view
         var recentConferences = conferences
@@ -302,7 +305,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     private async Task<ChannelItemResult> GetPopularItems(CancellationToken cancellationToken)
     {
-        var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
+        var conferences = await SelectedConferencesAsync(cancellationToken).ConfigureAwait(false);
 
         // Fetch events from the 5 most recent conferences
         var recentConferences = conferences
@@ -335,7 +338,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     private async Task<ChannelItemResult> GetRecommendedItems(CancellationToken cancellationToken)
     {
-        var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
+        var conferences = await SelectedConferencesAsync(cancellationToken).ConfigureAwait(false);
 
         var recentConferences = conferences
             .Where(c => c.EventLastReleasedAt != null)
@@ -373,11 +376,63 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
     }
 
+    /// <summary>
+    /// The conferences the user asked for, or all of them when nothing is configured.
+    /// Every path into the channel goes through here, so Popular and Recommended are
+    /// drawn from the same set as the folders: a user who only follows Congress has no
+    /// use for a FOSSGIS talk in their Popular row, and fewer conferences also means
+    /// fewer copies of a talk in the library (#86).
+    /// </summary>
+    private async Task<List<CccConference>> SelectedConferencesAsync(CancellationToken cancellationToken)
+    {
+        var all = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
+        return SelectConferences(all, Plugin.Instance?.Configuration.ConferenceFilter);
+    }
+
+    internal static List<CccConference> SelectConferences(
+        IEnumerable<CccConference> conferences, string? filter)
+    {
+        var wanted = (filter ?? string.Empty)
+            .Split(FilterSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return wanted.Count == 0
+            ? conferences.ToList()
+            : conferences.Where(c => Matches(c, wanted)).ToList();
+    }
+
+    /// <summary>
+    /// An entry matches the acronym, or any segment of the slug the conference is filed
+    /// under. The slugs are not uniform — "congress/2024" but "conferences/gpn/gpn22" and
+    /// "conferences/geo/fossgis2023" — so a fixed position would pick the wrong word;
+    /// matching any segment lets "congress" and "gpn" both stand for the series.
+    /// </summary>
+    private static bool Matches(CccConference conference, HashSet<string> wanted)
+    {
+        if (wanted.Contains(conference.Acronym))
+        {
+            return true;
+        }
+
+        foreach (var segment in conference.Slug.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            // Almost everything sits under "conferences/", so honouring that as a series
+            // would select the whole catalogue and silently turn the filter off.
+            if (!segment.Equals(GenericSlugSegment, StringComparison.OrdinalIgnoreCase)
+                && wanted.Contains(segment))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // ── Year grouping ────────────────────────────────────
 
     private async Task<ChannelItemResult> GetYearFolders(CancellationToken cancellationToken)
     {
-        var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
+        var conferences = await SelectedConferencesAsync(cancellationToken).ConfigureAwait(false);
 
         var years = conferences
             .Where(c => c.EventLastReleasedAt != null)
@@ -403,7 +458,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             return new ChannelItemResult();
         }
 
-        var conferences = await _apiClient.GetConferencesAsync(cancellationToken).ConfigureAwait(false);
+        var conferences = await SelectedConferencesAsync(cancellationToken).ConfigureAwait(false);
 
         var items = conferences
             .Where(c => c.EventLastReleasedAt != null && c.EventLastReleasedAt.Value.Year == year)

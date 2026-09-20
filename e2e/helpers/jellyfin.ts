@@ -43,6 +43,7 @@ export type PluginConfig = {
 	PreferredFormat?: "Mp4" | "WebM";
 	PreferredLanguage?: string;
 	CompatibleDefaultVersion?: boolean;
+	ConferenceFilter?: string;
 	ApiBaseUrl?: string;
 };
 

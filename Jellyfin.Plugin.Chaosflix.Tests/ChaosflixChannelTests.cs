@@ -277,6 +277,44 @@ public class ChaosflixChannelTests
     }
 
     [Fact]
+    public async Task ConfiguredConferencesNarrowEveryWayIntoTheChannel()
+    {
+        TestPlugin.Configure(c => c.ConferenceFilter = "congress");
+        Conferences(
+            Conference("38c3", Day(2024), "congress/2024"),
+            Conference("gpn22", Day(2023), "conferences/gpn/gpn22"));
+        _api.Json("/public/conferences/38c3", Conference("38c3", Day(2024), "congress/2024",
+            Event("kept", views: 5_000, releaseDate: FakeTime.Start.AddDays(-1))));
+        _api.Json("/public/conferences/gpn22", Conference("gpn22", Day(2023), "conferences/gpn/gpn22",
+            Event("dropped", views: 900_000, releaseDate: FakeTime.Start.AddDays(-1))));
+
+        var years = await Items("virtual:years");
+        var popular = await Items("virtual:popular");
+        var recommended = await Items("virtual:recommended");
+        var latest = await _channel.GetLatestMedia(
+            new ChannelLatestMediaSearch(), CancellationToken.None);
+
+        Assert.Equal(["year:2024"], years.Items.Select(i => i.Id));
+        Assert.Equal(["event:popular:kept"], popular.Items.Select(i => i.Id));
+        Assert.Equal(["event:recommended:kept"], recommended.Items.Select(i => i.Id));
+        Assert.Equal(["event:conf-38c3:kept"], latest.Select(i => i.Id));
+        Assert.Equal(0, _api.CountRequests("/public/conferences/gpn22"));
+    }
+
+    [Fact]
+    public async Task AnEmptyConferenceFilterLeavesEveryConferenceInPlace()
+    {
+        TestPlugin.Configure(c => c.ConferenceFilter = string.Empty);
+        Conferences(
+            Conference("38c3", Day(2024), "congress/2024"),
+            Conference("gpn22", Day(2023), "conferences/gpn/gpn22"));
+
+        var years = await Items("virtual:years");
+
+        Assert.Equal(["year:2024", "year:2023"], years.Items.Select(i => i.Id));
+    }
+
+    [Fact]
     public async Task RelatedFetchesTopFifteenByWeight()
     {
         var related = Enumerable.Range(1, 20)
