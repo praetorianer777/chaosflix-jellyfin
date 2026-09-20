@@ -9,12 +9,15 @@ set -u
 
 SRC="$(cd "$(dirname "$0")/../../.." && pwd)"
 
+# The fixtures commit, and a CI runner has no git identity of its own.
+export GIT_AUTHOR_NAME=Tester GIT_AUTHOR_EMAIL=tester@example.com
+export GIT_COMMITTER_NAME=Tester GIT_COMMITTER_EMAIL=tester@example.com
+
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 git clone -q "$SRC" "$W/r" && cd "$W/r"
 git switch -q main && cp -r "$SRC/.claude" . && cp "$SRC/run-tests.sh" . && git add -A && git commit -qm fixture
 export CLAUDE_PROJECT_DIR="$W/r"
-git config user.email t@example.com && git config user.name Tester
 G="git"; C="commit"
 fail=0
 
