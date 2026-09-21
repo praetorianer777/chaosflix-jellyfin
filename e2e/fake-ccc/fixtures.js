@@ -169,22 +169,66 @@ const EVENTS = [
 	},
 ];
 
+// A second conference nothing in the suite ever browses. It exists so the sync can be
+// caught actually walking a conference into the library: an item for its talk cannot
+// come from a test clicking through the folders, because none of them go here (#8).
+const ARCHIVE = {
+	acronym: "e2e-archive",
+	title: "E2E Archive 2019",
+	slug: "conferences/archive/2019",
+	description: "Fixture conference the tests never open",
+	logo_url: "http://fake-ccc:3000/static/logo.png",
+	url: "http://fake-ccc:3000/public/conferences/e2e-archive",
+	event_last_released_at: "2019-06-01T12:00:00Z",
+};
+
+const ARCHIVE_EVENTS = [
+	{
+		guid: "e2e-0000-0000-0000-00000000000a",
+		title: "Archived talk",
+		subtitle: "",
+		slug: "archived-talk",
+		description: "A talk in a conference the tests never open.",
+		original_language: "deu",
+		persons: ["Carol Coder"],
+		tags: ["Archive"],
+		// Below the Recommended threshold on purpose, so this conference cannot
+		// disturb what the other specs assert about that row.
+		view_count: 7,
+		date: "2019-05-30T11:00:00Z",
+		release_date: "2019-06-01T11:00:00Z",
+		duration: SECONDS,
+		thumb_url: "http://fake-ccc:3000/static/thumb.png",
+		poster_url: "http://fake-ccc:3000/static/poster.png",
+		frontend_link: "http://fake-ccc:3000/v/archived-talk",
+		conference_title: ARCHIVE.title,
+		recordings: [recording("h264-hd", "video/mp4", "two-stream.mp4")],
+		related: [],
+	},
+];
+
 // The list endpoint omits per-event detail, exactly like the real API.
 const listEvent = (event) => {
 	const { recordings, related, ...rest } = event;
 	return rest;
 };
 
+const ALL_EVENTS = [...EVENTS, ...ARCHIVE_EVENTS];
+
 module.exports = {
 	CONFERENCE,
+	ARCHIVE,
 	EVENTS,
 	conferenceList: () => ({
-		conferences: [{ ...CONFERENCE, events: undefined }],
+		conferences: [CONFERENCE, ARCHIVE].map((c) => ({ ...c, events: undefined })),
 	}),
-	conferenceDetail: () => ({ ...CONFERENCE, events: EVENTS.map(listEvent) }),
-	event: (guid) => EVENTS.find((e) => e.guid === guid),
+	conferenceDetail: (acronym) =>
+		acronym === ARCHIVE.acronym
+			? { ...ARCHIVE, events: ARCHIVE_EVENTS.map(listEvent) }
+			: { ...CONFERENCE, events: EVENTS.map(listEvent) },
+	event: (guid) => ALL_EVENTS.find((e) => e.guid === guid),
 	search: (query) => ({
-		events: EVENTS.filter((e) =>
+		events: ALL_EVENTS.filter((e) =>
 			e.title.toLowerCase().includes(String(query || "").toLowerCase()),
 		).map(listEvent),
 	}),

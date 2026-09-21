@@ -9,6 +9,7 @@ import {
 	PLUGIN_ID,
 	runScheduledTask,
 	setPluginConfig,
+	userId,
 } from "../helpers/jellyfin";
 
 /** A talk the fake CCC API serves; see e2e/fake-ccc/fixtures.js. */
@@ -70,6 +71,30 @@ test.describe("plugin installation", () => {
 		const tasks = await (await api.get("/ScheduledTasks")).json();
 		const task = tasks.find((t: { Key: string }) => t.Key === "ChaosflixSync");
 		expect(task.LastExecutionResult.Status).toBe("Completed");
+	});
+
+	test("a sync leaves the talks it walked findable by name", async () => {
+		const api = await apiContext();
+		const uid = await userId(api);
+
+		// Jellyfin creates a channel item when a client asks for the folder holding
+		// it and at no other time, so a talk nobody has browsed to cannot be found
+		// by name. The sync walks the conferences the user follows to close that
+		// gap (#8). Which folders it walks is asserted in ChaosflixSyncTaskTests;
+		// what this covers is that walking them really does reach the search index,
+		// which is the part no unit test can see.
+		try {
+			await setPluginConfig(api, { ConferenceFilter: "archive" });
+			await runScheduledTask(api, "ChaosflixSync");
+
+			const hints = (await (
+				await api.get(`/Search/Hints?searchTerm=Archived&userId=${uid}`)
+			).json()) as { SearchHints?: Array<{ Name: string }> };
+
+			expect(hints.SearchHints?.map((h) => h.Name)).toContain("Archived talk");
+		} finally {
+			await setPluginConfig(api, { ConferenceFilter: "" });
+		}
 	});
 
 	test("configuration survives a round trip through the API", async () => {

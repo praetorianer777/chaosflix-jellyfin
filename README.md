@@ -115,6 +115,15 @@ Recommended and the latest row, so they are drawn from the same conferences as
 the folders, and the plugin stops fetching the details of everything else.
 Left empty, nothing is filtered.
 
+Naming your conferences also makes their talks **findable by name**. Jellyfin
+creates a channel item the first time something asks for the folder holding it
+and at no other time, so a talk nobody has browsed to cannot be searched for.
+The scheduled sync walks the conferences you named once per run, which puts
+them in the library and therefore in Jellyfin's search. With no conferences
+named it walks the 20 most recent ones instead — expanding all of media.ccc.de
+four times a day would be a poor way to treat an API the CCC runs on donated
+time.
+
 Every recording of a talk is offered as its own version ("HD MP4 · Deutsch",
 "SD WebM · English") in the player's version selector; these settings decide
 which of them is the default. A viewer can pick another one per playback and

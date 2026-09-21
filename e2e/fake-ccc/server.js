@@ -78,8 +78,9 @@ const server = http.createServer((req, res) => {
 		segments[1] === "conferences" &&
 		segments[2]
 	) {
-		return segments[2] === fixtures.CONFERENCE.acronym
-			? json(res, fixtures.conferenceDetail())
+		return segments[2] === fixtures.CONFERENCE.acronym ||
+			segments[2] === fixtures.ARCHIVE.acronym
+			? json(res, fixtures.conferenceDetail(segments[2]))
 			: json(res, { error: "not found" }, 404);
 	}
 

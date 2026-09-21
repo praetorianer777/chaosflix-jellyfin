@@ -227,13 +227,44 @@ export async function serverId(api: APIRequestContext): Promise<string> {
 	return (await (await api.get("/System/Info/Public")).json()).Id as string;
 }
 
-export async function talkNamed(api: APIRequestContext, name: string) {
+/** Every year folder under Browse by Year. */
+export async function yearFolders(api: APIRequestContext) {
 	const byYear = (await channelItems(api)).find((i) =>
 		i.Name.includes("Browse by Year"),
 	)!;
-	const years = await channelItems(api, byYear.Id);
-	const conferences = await channelItems(api, years[0].Id);
-	const talks = await channelItems(api, conferences[0].Id);
+	return channelItems(api, byYear.Id);
+}
+
+/** Every conference folder, across all years. */
+export async function conferenceFolders(api: APIRequestContext) {
+	const all = [];
+	for (const year of await yearFolders(api)) {
+		all.push(...(await channelItems(api, year.Id)));
+	}
+
+	return all;
+}
+
+/**
+ * One conference's folder, found by title. The fake API serves more than one
+ * conference and Jellyfin sorts channel items by name, so an index into the year
+ * or conference list points at whichever one happens to sort first, not at the
+ * one a test means.
+ */
+export async function conferenceFolder(
+	api: APIRequestContext,
+	title: string = CONFERENCE_TITLE,
+) {
+	const match = (await conferenceFolders(api)).find((c) => c.Name === title);
+	if (!match) {
+		throw new Error(`no conference folder named ${title}`);
+	}
+
+	return match;
+}
+
+export async function talkNamed(api: APIRequestContext, name: string) {
+	const talks = await channelItems(api, (await conferenceFolder(api)).Id);
 	return talks.find((t) => t.Name === name)!;
 }
 
