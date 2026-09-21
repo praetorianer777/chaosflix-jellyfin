@@ -4,9 +4,12 @@ import {
 	channelItems,
 	chaosflixChannelId,
 	CONFERENCE_TITLE,
+	conferenceFolder,
+	conferenceFolders,
 	loginUi,
 	runScheduledTask,
 	userId,
+	yearFolders,
 } from "../helpers/jellyfin";
 
 test.describe("browsing the channel", () => {
@@ -31,9 +34,10 @@ test.describe("browsing the channel", () => {
 			i.Name.includes("Browse by Year"),
 		)!;
 		const years = await channelItems(api, byYear.Id);
-		expect(years.map((y) => y.Name)).toEqual(["2025"]);
+		// Jellyfin sorts channel items by name, so the older year comes first.
+		expect(years.map((y) => y.Name)).toEqual(["2019", "2025"]);
 
-		const conferences = await channelItems(api, years[0].Id);
+		const conferences = await channelItems(api, years.find((y) => y.Name === "2025")!.Id);
 		expect(conferences.map((c) => c.Name)).toEqual([CONFERENCE_TITLE]);
 
 		// Jellyfin applies its own sort order to channel items.
@@ -49,12 +53,7 @@ test.describe("browsing the channel", () => {
 		const api = await apiContext();
 		const user = await userId(api);
 
-		const byYear = (await channelItems(api)).find((i) =>
-			i.Name.includes("Browse by Year"),
-		)!;
-		const years = await channelItems(api, byYear.Id);
-		const conferences = await channelItems(api, years[0].Id);
-		const talks = await channelItems(api, conferences[0].Id);
+		const talks = await channelItems(api, (await conferenceFolder(api)).Id);
 		const talk = talks.find((t) => t.Name === "Three stream talk")!;
 
 		const details = await (
@@ -86,6 +85,7 @@ test.describe("browsing the channel", () => {
 		// view-count ranking the plugin applies is not observable here; it is
 		// asserted in ChaosflixChannelTests instead.
 		expect(talks.map((t) => t.Name).sort()).toEqual([
+			"Archived talk",
 			"Long talk",
 			"Three stream talk",
 			"Two stream talk",
@@ -113,18 +113,23 @@ test.describe("browsing the channel", () => {
 	test("talks stay in every folder across a channel refresh", async () => {
 		const api = await apiContext();
 		const folders = await channelItems(api);
-		const byYear = folders.find((i) => i.Name.includes("Browse by Year"))!;
-		const years = await channelItems(api, byYear.Id);
-		const conference = (await channelItems(api, years[0].Id))[0];
+		const conference = await conferenceFolder(api);
 
 		for (const folder of folders) {
 			await channelItems(api, folder.Id);
 		}
 		await runScheduledTask(api, "RefreshInternetChannels");
 
-		const everything = ["Long talk", "Three stream talk", "Two stream talk"];
+		const everything = [
+			"Archived talk",
+			"Long talk",
+			"Three stream talk",
+			"Two stream talk",
+		];
 		for (const [folder, expected] of [
-			[conference, everything],
+			// A conference folder holds only its own talks; Popular draws from
+			// every conference, so it also carries the archived one.
+			[conference, everything.filter((n) => n !== "Archived talk")],
 			[folders.find((i) => i.Name.includes("Popular"))!, everything],
 			// The long talk stays below the Recommended view threshold.
 			[
@@ -150,10 +155,12 @@ test.describe("browsing the channel", () => {
 		const user = await userId(api);
 		const channel = await chaosflixChannelId(api);
 		const folders = await channelItems(api);
-		const byYear = folders.find((i) => i.Name.includes("Browse by Year"))!;
-		const years = await channelItems(api, byYear.Id);
-		const conferences = await channelItems(api, years[0].Id);
-		const conferenceTalks = await channelItems(api, conferences[0].Id);
+		const years = await yearFolders(api);
+		const conferences = await conferenceFolders(api);
+		const conferenceTalks = await channelItems(
+			api,
+			(await conferenceFolder(api)).Id,
+		);
 
 		for (const folder of [...folders, ...years, ...conferences]) {
 			await channelItems(api, folder.Id);
@@ -183,9 +190,8 @@ test.describe("browsing the channel", () => {
 		const api = await apiContext();
 		const user = await userId(api);
 		const folders = await channelItems(api);
-		const byYear = folders.find((i) => i.Name.includes("Browse by Year"))!;
-		const years = await channelItems(api, byYear.Id);
-		const conferences = await channelItems(api, years[0].Id);
+		const years = await yearFolders(api);
+		const conferences = await conferenceFolders(api);
 
 		for (const folder of [...folders, ...years, ...conferences]) {
 			await channelItems(api, folder.Id);

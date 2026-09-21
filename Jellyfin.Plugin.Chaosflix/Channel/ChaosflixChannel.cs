@@ -35,7 +35,7 @@ namespace Jellyfin.Plugin.Chaosflix.Channel;
 public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsLatestMedia
 {
     private const string FolderPopular = "virtual:popular";
-    private const string FolderBrowseByYear = "virtual:years";
+    internal const string FolderBrowseByYear = "virtual:years";
     private const string FolderRecommended = "virtual:recommended";
     private const string PrefixConference = "conf:";
     private const string PrefixEvent = "event:";
@@ -44,6 +44,9 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     private const string ScopePopular = "popular";
     private const string ScopeRecommended = "recommended";
     private const string ConferenceScopePrefix = "conf-";
+
+    /// <summary>The channel's display name, which is also how Jellyfin identifies it.</summary>
+    internal const string ChannelName = "Chaosflix";
     private const string GenericSlugSegment = "conferences";
 
     internal const int ProbeCacheCapacity = 128;
@@ -133,7 +136,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     }
 
     /// <inheritdoc />
-    public string Name => "Chaosflix";
+    public string Name => ChannelName;
 
     /// <inheritdoc />
     public string Description => "Chaos Computer Club talks from media.ccc.de";
@@ -532,6 +535,12 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     // parent, so a talk listed in several folders under the same id is moved to
     // whichever folder was listed last and vanishes from the others (#15).
     // Every folder therefore hands out its own id for a talk.
+    /// <summary>
+    /// The id of a conference's folder, as handed out by <see cref="GetConferencesByYear"/>
+    /// and stored on the library item as its ExternalId.
+    /// </summary>
+    internal static string ConferenceFolderId(string acronym) => $"{PrefixConference}{acronym}";
+
     private static string ConferenceScope(string acronym) => $"{ConferenceScopePrefix}{acronym}";
 
     private static string RelatedScope(string eventGuid) => $"related-{eventGuid}";
