@@ -13,7 +13,8 @@ All content is sourced from [media.ccc.de](https://media.ccc.de) via their publi
 - ⭐ **Recommended** — trending talks ranked by views and recency
 - 📅 **Browse by Year** — conferences grouped by year (2024 → 38C3, Camp…)
 - 📂 **Browse by Conference** — 38C3, Camp 2019, FOSSGIS, and hundreds more
-- 🔗 **Related Talks** — discover similar talks via CCC's weighted recommendations
+- 🔗 **Related Talks** — CCC's weighted recommendations fill the "More like this"
+  row of any client, for the talks your library holds
 - 🏷️ **Tags as Genres** — filter by topic (security, ethics, hardware…)
 - 👤 **Speaker metadata** — see all talks by a specific person
 - 🕐 **Watch history & resume** — powered by Jellyfin (per-user, cross-device)
@@ -347,12 +348,13 @@ Jellyfin UI  →  Chaosflix Channel  →  media.ccc.de API  →  CDN streaming
                      ├── 🔥 Popular (top by views)
                      ├── ⭐ Recommended (views × recency)
                      ├── 📅 Year → Conference → Talks
-                     ├── 🔗 Related talks per event
+                     ├── 🔗 Related talks, as Jellyfin's similar items
                      ├── Speaker/tag metadata
                      └── Multiple quality/language sources per talk
 ```
 
-The plugin implements Jellyfin's `IChannel` interface. All heavy lifting (watch history, playback position, user management, transcoding, SyncPlay) is handled by Jellyfin itself.
+The plugin implements Jellyfin's `IChannel` interface, plus
+`ILocalSimilarItemsProvider` for the related talks. All heavy lifting (watch history, playback position, user management, transcoding, SyncPlay) is handled by Jellyfin itself.
 
 ## CCC API
 

@@ -539,6 +539,10 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     /// The id of a conference's folder, as handed out by <see cref="GetConferencesByYear"/>
     /// and stored on the library item as its ExternalId.
     /// </summary>
+    /// <summary>The id of a talk's copy in a conference folder, as the tests spell it.</summary>
+    internal static string ConferenceItemId(string eventGuid, string acronym = "c") =>
+        $"{PrefixEvent}{ConferenceScope(acronym)}:{eventGuid}";
+
     internal static string ConferenceFolderId(string acronym) => $"{PrefixConference}{acronym}";
 
     private static string ConferenceScope(string acronym) => $"{ConferenceScopePrefix}{acronym}";
@@ -556,6 +560,25 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     {
         var separator = id.LastIndexOf(':');
         return separator < 0 ? id : id[(separator + 1)..];
+    }
+
+    /// <summary>
+    /// True for the copy of a talk that lives in its conference folder. A talk is
+    /// listed in several folders and each listing is its own library item, so
+    /// anything pointing at "the" talk has to pick one; the conference copy is the
+    /// one that carries the real date and the one the latest row points at.
+    /// </summary>
+    internal static bool IsConferenceCopy(string? channelItemId)
+    {
+        if (string.IsNullOrEmpty(channelItemId)
+            || !channelItemId.StartsWith(PrefixEvent, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var scoped = channelItemId[PrefixEvent.Length..];
+        var separator = scoped.LastIndexOf(':');
+        return separator > 0 && IsConferenceScope(scoped[..separator]);
     }
 
     /// <summary>

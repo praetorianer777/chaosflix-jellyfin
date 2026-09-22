@@ -3,6 +3,7 @@ using Jellyfin.Plugin.Chaosflix.Api;
 using Jellyfin.Plugin.Chaosflix.Channel;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Channels;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -28,6 +29,9 @@ public class ChaosflixServiceRegistrator : IPluginServiceRegistrator
         // second one with empty caches.
         serviceCollection.AddSingleton<ChaosflixChannel>();
         serviceCollection.AddSingleton<IChannel>(sp => sp.GetRequiredService<ChaosflixChannel>());
+        // Jellyfin collects the similar-items providers out of the container, the same
+        // way it collects channels.
+        serviceCollection.AddSingleton<ISimilarItemsProvider, ChaosflixSimilarItems>();
         serviceCollection.AddHostedService<ChaosflixUserDataMirror>();
     }
 }
