@@ -43,6 +43,7 @@ export default async function globalSetup() {
 	// does not play H.264.
 	await setPluginConfig(api, {
 		ApiBaseUrl: FAKE_API,
+		StreamingBaseUrl: "http://fake-ccc:3000/idle",
 		PreferredFormat: "Mp4",
 		PreferredQuality: "High",
 		PreferredLanguage: "",

@@ -314,6 +314,97 @@ public class ChaosflixChannelTests
         Assert.Equal(["year:2024", "year:2023"], years.Items.Select(i => i.Id));
     }
 
+    // ── Live streams (#71) ───────────────────────────────
+
+    [Fact]
+    public async Task AConferenceThatIsNotOnAirAddsNoLiveFolder()
+    {
+        Live(LiveConference("39c3", streaming: false,
+            LiveRoom("halla", "Adams", "Something", null,
+                LiveStream("hd-native", width: 1920, urls: ("hls", "https://cdn/s1.m3u8")))));
+
+        var root = await Items(null);
+
+        Assert.DoesNotContain("virtual:live", root.Items.Select(i => i.Id));
+    }
+
+    [Fact]
+    public async Task ARoomOnAirPutsTheLiveFolderFirst()
+    {
+        Live(LiveConference("39c3", streaming: true,
+            LiveRoom("halla", "Adams", "Opening", null,
+                LiveStream("hd-native", width: 1920, urls: ("hls", "https://cdn/s1.m3u8")))));
+
+        var root = await Items(null);
+
+        Assert.Equal("virtual:live", root.Items[0].Id);
+        Assert.Equal("🔴 Live now", root.Items[0].Name);
+    }
+
+    [Fact]
+    public async Task ARoomWithNothingJellyfinCanPlayIsNotLive()
+    {
+        // DASH only: the site offers it, but a channel item has no manifest reader for it.
+        Live(LiveConference("39c3", streaming: true,
+            LiveRoom("halla", "Adams", "Opening", null,
+                LiveStream("dash-native", type: "dash", urls: ("dash", "https://cdn/manifest.mpd")))));
+
+        var root = await Items(null);
+
+        Assert.DoesNotContain("virtual:live", root.Items.Select(i => i.Id));
+    }
+
+    [Fact]
+    public async Task ALiveRoomNamesWhatIsOnAirAndHasNoLength()
+    {
+        Live(LiveConference("39c3", streaming: true,
+            LiveRoom("halla", "Adams", "Opening Event", "Closing Event",
+                LiveStream("hd-native", width: 1920, urls: ("hls", "https://cdn/s1.m3u8")))));
+
+        var room = Assert.Single((await Items("virtual:live")).Items);
+
+        Assert.Equal("live:39c3:halla", room.Id);
+        Assert.Equal("Adams: Opening Event", room.Name);
+        Assert.True(room.IsLiveStream);
+        Assert.Null(room.RunTimeTicks);
+        Assert.Equal(
+            "39C3 · Adams · live\nNow: Opening Event — Live Speaker\nNext: Closing Event",
+            room.Overview);
+    }
+
+    [Fact]
+    public async Task LiveSourcesPreferHlsAndAreOrderedByUsefulness()
+    {
+        Live(LiveConference("39c3", streaming: true,
+            LiveRoom("halla", "Adams", "Opening", null,
+                LiveStream("sd-native", width: 1024, urls: ("hls", "https://cdn/sd.m3u8")),
+                LiveStream("audio-native", type: "audio", urls: ("mp3", "https://cdn/s1.mp3")),
+                LiveStream("hd-translated", translated: true, width: 1920, urls: ("hls", "https://cdn/hd-t.m3u8")),
+                LiveStream("hd-native", width: 1920,
+                    urls: [("webm", "https://cdn/hd.webm"), ("hls", "https://cdn/hd.m3u8")]))));
+
+        var sources = await Sources("live:39c3:halla");
+
+        Assert.Equal(
+            ["https://cdn/hd.m3u8", "https://cdn/sd.m3u8", "https://cdn/hd-t.m3u8"],
+            sources.Select(s => s.Path));
+        Assert.All(sources, s => Assert.True(s.IsInfiniteStream));
+        // Straight from c3voc: the CDN redirect the recordings are proxied for does not
+        // apply to an HLS manifest.
+        Assert.All(sources, s => Assert.DoesNotContain("ChaosflixStream", s.Path!, StringComparison.Ordinal));
+        Assert.Equal("1920x1080 · native · HLS", sources[0].Name);
+    }
+
+    [Fact]
+    public async Task ARoomThatWentOffAirOffersNothingToPlay()
+    {
+        Live(LiveConference("39c3", streaming: false,
+            LiveRoom("halla", "Adams", null, null,
+                LiveStream("hd-native", width: 1920, urls: ("hls", "https://cdn/s1.m3u8")))));
+
+        Assert.Empty(await Sources("live:39c3:halla"));
+    }
+
     [Fact]
     public async Task RelatedFetchesTopFifteenByWeight()
     {
@@ -1023,6 +1114,9 @@ public class ChaosflixChannelTests
 
     private static List<MediaStream> Streams(params MediaStreamType[] types) =>
         types.Select((t, i) => new MediaStream { Type = t, Index = i }).ToList();
+
+    private void Live(params CccLiveConference[] conferences) =>
+        _api.Json("/streams/v2.json", conferences);
 
     private void Conferences(params CccConference[] conferences) =>
         _api.Json("/public/conferences", new CccConferencesResponse { Conferences = conferences.ToList() });

@@ -9,6 +9,8 @@ All content is sourced from [media.ccc.de](https://media.ccc.de) via their publi
 ## Features
 
 - 🎬 **Stream talks** from the CCC CDN through the server — no downloads, no local storage
+- 🔴 **Live now** — while a congress is running, the rooms on air with what is
+  playing in them; the folder is absent the rest of the year
 - 🔥 **Popular Talks** — most viewed talks across conferences
 - ⭐ **Recommended** — trending talks ranked by views and recency
 - 📅 **Browse by Year** — conferences grouped by year (2024 → 38C3, Camp…)
@@ -105,6 +107,7 @@ Go to **Dashboard → Plugins → Chaosflix** to set:
 | Preferred Language | Original / Deutsch / English | Original |
 | Start on a version every client can play untouched | on / off | off |
 | Conferences | comma-separated list | empty — every conference |
+| Streaming Endpoint | url | empty — streaming.media.ccc.de |
 
 **Conferences** narrows the whole channel to what you actually follow.
 media.ccc.de publishes hundreds of them, and Browse by Year lists every one.
@@ -351,6 +354,7 @@ container fallback — that path was broken for as long as nothing ran it.
 ```
 Jellyfin UI  →  Chaosflix Channel  →  media.ccc.de API  →  CDN streaming
                      │
+                     ├── 🔴 Live now (only during a congress)
                      ├── 🔥 Popular (top by views)
                      ├── ⭐ Recommended (views × recency)
                      ├── 📅 Year → Conference → Talks

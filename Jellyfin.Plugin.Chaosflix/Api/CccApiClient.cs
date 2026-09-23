@@ -20,6 +20,12 @@ public class CccApiClient : IDisposable
     public const string DefaultBaseUrl = "https://api.media.ccc.de/public";
 
     /// <summary>
+    /// Default endpoint reporting which rooms are on air. A separate service from the
+    /// archive API, hence its own base url.
+    /// </summary>
+    public const string DefaultStreamingBaseUrl = "https://streaming.media.ccc.de";
+
+    /// <summary>
     /// Name of the <see cref="IHttpClientFactory"/> client used to resolve CDN redirects.
     /// It must be configured with <c>AllowAutoRedirect = false</c>.
     /// </summary>
@@ -40,6 +46,12 @@ public class CccApiClient : IDisposable
 
     /// <summary>Search results — cache for 10 minutes.</summary>
     private static readonly TimeSpan SearchTtl = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Which rooms are live — cache for a minute. Everything else here describes an
+    /// archive that changes by the day; this changes between two talks.
+    /// </summary>
+    private static readonly TimeSpan LiveTtl = TimeSpan.FromMinutes(1);
 
     /// <summary>
     /// How long the configuration page's live check waits. Short on purpose: an endpoint
@@ -136,6 +148,35 @@ public class CccApiClient : IDisposable
     }
 
     /// <summary>
+    /// Gets the conferences that are streaming right now (cached briefly).
+    /// Outside a congress the endpoint answers with an empty list, which is not an
+    /// error and is what keeps the live folder from appearing all year.
+    /// </summary>
+    public Task<List<CccLiveConference>> GetLiveConferencesAsync(CancellationToken cancellationToken)
+    {
+        // The endpoint is part of the key: pointing the plugin at a different streaming
+        // site has to take effect at once, not after the entry expires.
+        return _cache.GetOrCreateAsync($"live:{StreamingBaseUrl}", LiveTtl, async ct =>
+        {
+            _logger.LogDebug("Fetching live streams from {Url}", StreamingBaseUrl);
+            try
+            {
+                var conferences = await _httpClient
+                    .GetFromJsonAsync<List<CccLiveConference>>($"{StreamingBaseUrl}/streams/v2.json", ct)
+                    .ConfigureAwait(false);
+                return conferences ?? new List<CccLiveConference>();
+            }
+            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
+            {
+                // A congress is the one time the archive is least interesting, but a
+                // streaming site that is down must not take the rest of the channel with it.
+                _logger.LogWarning(ex, "Could not read the live streams; treating nothing as live");
+                return new List<CccLiveConference>();
+            }
+        }, cancellationToken);
+    }
+
+    /// <summary>
     /// Searches for events (cached).
     /// </summary>
     public Task<List<CccEvent>> SearchEventsAsync(string query, CancellationToken cancellationToken)
@@ -160,6 +201,19 @@ public class CccApiClient : IDisposable
         {
             var configured = Plugin.Instance?.Configuration.ApiBaseUrl;
             return string.IsNullOrWhiteSpace(configured) ? DefaultBaseUrl : configured.TrimEnd('/');
+        }
+    }
+
+    /// <summary>
+    /// Gets the endpoint the live stream list is read from: the configured one, or the
+    /// public default.
+    /// </summary>
+    public static string StreamingBaseUrl
+    {
+        get
+        {
+            var configured = Plugin.Instance?.Configuration.StreamingBaseUrl;
+            return string.IsNullOrWhiteSpace(configured) ? DefaultStreamingBaseUrl : configured.TrimEnd('/');
         }
     }
 

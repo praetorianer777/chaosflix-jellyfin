@@ -69,6 +69,11 @@ const server = http.createServer((req, res) => {
 	const segments = url.pathname.split("/").filter(Boolean);
 	console.log(`${req.method} ${req.url}`);
 
+	// Two fixed streaming states rather than one that depends on the date.
+	if (url.pathname.endsWith("/streams/v2.json")) {
+		return json(res, fixtures.liveStreams(segments[0] === "live"));
+	}
+
 	if (url.pathname === "/public/conferences") {
 		return json(res, fixtures.conferenceList());
 	}

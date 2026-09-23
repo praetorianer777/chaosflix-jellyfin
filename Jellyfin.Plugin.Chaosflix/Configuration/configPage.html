@@ -53,6 +53,11 @@
                             <div class="fieldDescription">Leave empty for every conference media.ccc.de publishes. Otherwise list what you follow, separated by commas: a series as it appears in the media.ccc.de address ("congress", "gpn", "easterhegg") keeps every edition including future ones, an acronym ("38c3") keeps exactly that one. This also narrows Popular and Recommended.</div>
                         </div>
                         <div class="inputContainer">
+                            <label class="inputLabel" for="StreamingBaseUrl">Streaming Endpoint</label>
+                            <input is="emby-input" type="text" id="StreamingBaseUrl" placeholder="https://streaming.media.ccc.de" />
+                            <div class="fieldDescription">Where the plugin asks which rooms are on air. Leave empty for streaming.media.ccc.de. A "🔴 Live now" folder appears while a congress is running and disappears again afterwards.</div>
+                        </div>
+                        <div class="inputContainer">
                             <label class="inputLabel" for="ApiBaseUrl">API Endpoint</label>
                             <input is="emby-input" type="text" id="ApiBaseUrl" placeholder="https://api.media.ccc.de/public" />
                             <div class="fieldDescription">Leave empty for media.ccc.de. Set it to use a mirror.</div>
@@ -205,6 +210,7 @@
                         page.querySelector('#PreferredLanguage').value = config.PreferredLanguage || '';
                         page.querySelector('#CompatibleDefaultVersion').checked = config.CompatibleDefaultVersion === true;
                         page.querySelector('#ConferenceFilter').value = config.ConferenceFilter || '';
+                        page.querySelector('#StreamingBaseUrl').value = config.StreamingBaseUrl || '';
                         page.querySelector('#ApiBaseUrl').value = config.ApiBaseUrl || '';
                         Dashboard.hideLoadingMsg();
                     });
@@ -267,6 +273,7 @@
                         config.PreferredLanguage = page.querySelector('#PreferredLanguage').value;
                         config.CompatibleDefaultVersion = page.querySelector('#CompatibleDefaultVersion').checked;
                         config.ConferenceFilter = page.querySelector('#ConferenceFilter').value;
+                        config.StreamingBaseUrl = page.querySelector('#StreamingBaseUrl').value;
                         config.ApiBaseUrl = page.querySelector('#ApiBaseUrl').value;
                         ApiClient.updatePluginConfiguration(ChaosflixConfig.pluginUniqueId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
