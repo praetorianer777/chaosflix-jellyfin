@@ -163,7 +163,6 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
                 ChannelItemSortField.DateCreated,
                 ChannelItemSortField.Name
             },
-            SupportsContentDownloading = true,
             SupportsSortOrderToggle = true,
             AutoRefreshLevels = 3
         };
