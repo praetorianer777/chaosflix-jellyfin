@@ -8,6 +8,7 @@ import {
 	conferenceFolders,
 	loginUi,
 	runScheduledTask,
+	talkNamed,
 	userId,
 	yearFolders,
 } from "../helpers/jellyfin";
@@ -143,6 +144,24 @@ test.describe("browsing the channel", () => {
 				`${folder.Name} lost its talks`,
 			).toEqual([...expected].sort());
 		}
+	});
+
+	test("a talk offers the talks media.ccc.de relates to it", async () => {
+		const api = await apiContext();
+		const user = await userId(api);
+
+		// The fixture relates the three stream talk to the two stream talk. Answering
+		// this through Jellyfin's similar-items provider is what makes the
+		// recommendations reachable at all; as folders they never were (#72).
+		const talk = await talkNamed(api, "Three stream talk");
+		const related = await talkNamed(api, "Two stream talk");
+
+		const similar = (await (
+			await api.get(`/Items/${talk.Id}/Similar?userId=${user}`)
+		).json()) as { Items: Array<{ Id: string; Name: string }> };
+
+		expect(similar.Items.map((i) => i.Name)).toContain("Two stream talk");
+		expect(similar.Items.map((i) => i.Id)).toContain(related.Id);
 	});
 
 	// #54: "Recently Added in Chaosflix" is fed by
