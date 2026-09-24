@@ -335,6 +335,12 @@ container fallback — that path was broken for as long as nothing ran it.
   several folders needs one id per folder and becomes several library items.
   Watch state is mirrored between them, but the copies show up as duplicates in
   "Recently added" ([#54](https://github.com/praetorianer777/chaosflix-jellyfin/issues/54)).
+- Talks cannot be downloaded for offline playback. Jellyfin offers a download
+  only for items backed by a file on the server — `Video.CanDownload()` returns
+  `IsFileProtocol`, and a channel item's path is whatever its media source says,
+  which here is an http url. `/Items/{id}/Download` then serves that path off
+  disk, so there is nothing for it to send
+  ([#90](https://github.com/praetorianer777/chaosflix-jellyfin/issues/90)).
 - Playback runs through `/api/ChaosflixStream/proxy` with a signed url rather
   than straight from the CDN: ExoPlayer cannot follow the CDN's cross-domain
   redirects, so mirror failover, range requests and redirects are resolved
