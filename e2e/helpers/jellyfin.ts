@@ -45,6 +45,7 @@ export type PluginConfig = {
 	CompatibleDefaultVersion?: boolean;
 	ConferenceFilter?: string;
 	ApiBaseUrl?: string;
+	StreamingBaseUrl?: string;
 };
 
 /** Global setup runs in its own process, so the token is handed over on disk. */

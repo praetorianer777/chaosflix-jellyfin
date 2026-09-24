@@ -39,6 +39,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public string ConferenceFilter { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the streaming endpoint that reports which rooms are on air.
+    /// Empty means the public one at streaming.media.ccc.de.
+    /// </summary>
+    public string StreamingBaseUrl { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the CCC API endpoint. Empty means the public API at media.ccc.de;
     /// set it to use a mirror or, in the e2e tests, a local stand-in.
     /// </summary>

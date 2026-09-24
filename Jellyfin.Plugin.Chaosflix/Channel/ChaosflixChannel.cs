@@ -32,15 +32,17 @@ namespace Jellyfin.Plugin.Chaosflix.Channel;
 /// <summary>
 /// Jellyfin channel that provides CCC media content.
 /// </summary>
-public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsLatestMedia
+public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, ISupportsLatestMedia, IHasCacheKey
 {
     private const string FolderPopular = "virtual:popular";
+    private const string FolderLive = "virtual:live";
     internal const string FolderBrowseByYear = "virtual:years";
     private const string FolderRecommended = "virtual:recommended";
     private const string PrefixConference = "conf:";
     private const string PrefixEvent = "event:";
     private const string PrefixYear = "year:";
     private const string PrefixRelated = "related:";
+    private const string PrefixLive = "live:";
     private const string ScopePopular = "popular";
     private const string ScopeRecommended = "recommended";
     private const string ConferenceScopePrefix = "conf-";
@@ -62,6 +64,18 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
     /// format in its subtitle profile, and every client spells them this way.
     /// </summary>
     private static readonly char[] FilterSeparators = [',', ';', '\n', '\r'];
+
+    /// <summary>
+    /// How late a room going on or off air may show in the channel. It is the price of not
+    /// re-asking every folder on every browse; a talk runs far longer than this.
+    /// </summary>
+    internal static readonly TimeSpan LiveFolderVisibilityDelay = TimeSpan.FromMinutes(5);
+
+    /// <summary>Protocols taken from a live room, in the order they are preferred.</summary>
+    private static readonly string[] LiveProtocols = ["hls", "webm"];
+
+    /// <summary>Player types of a live room, in the order they are offered.</summary>
+    private static readonly string[] LiveTypeOrder = ["video", "slides", "audio", "music"];
 
     private static readonly Dictionary<string, string> SubtitleCodecs = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -168,6 +182,22 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
         };
     }
 
+    /// <summary>
+    /// Jellyfin keeps a folder listing on disk for three hours unless the channel hands it
+    /// a key that changes, and "🔴 Live now" has to come and go with the schedule rather
+    /// than three hours behind it (#71).
+    ///
+    /// The key carries a coarse time bucket: fine enough for a folder that stands for the
+    /// length of a congress, coarse enough that browsing does not re-ask every folder on
+    /// every click. It also carries the streaming endpoint, so pointing the plugin at a
+    /// different one takes effect at once instead of within the bucket.
+    /// </summary>
+    public string? GetCacheKey(string? userId)
+    {
+        var bucket = _timeProvider.GetUtcNow().Ticks / LiveFolderVisibilityDelay.Ticks;
+        return $"{bucket}{DeterministicGuid(CccApiClient.StreamingBaseUrl).ToString("N")[..8]}";
+    }
+
     /// <inheritdoc />
     public bool IsEnabledFor(string userId) => true;
 
@@ -195,11 +225,12 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         if (string.IsNullOrEmpty(query.FolderId))
         {
-            return GetRootItems();
+            return await GetRootItems(cancellationToken).ConfigureAwait(false);
         }
 
         return query.FolderId switch
         {
+            FolderLive => await GetLiveItems(cancellationToken).ConfigureAwait(false),
             FolderPopular => await GetPopularItems(cancellationToken).ConfigureAwait(false),
             FolderBrowseByYear => await GetYearFolders(cancellationToken).ConfigureAwait(false),
             FolderRecommended => await GetRecommendedItems(cancellationToken).ConfigureAwait(false),
@@ -220,6 +251,11 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
         SubscribeToConfigurationChanges();
         RememberServedId(id);
+
+        if (id.StartsWith(PrefixLive, StringComparison.Ordinal))
+        {
+            return await LiveSourcesAsync(id, cancellationToken).ConfigureAwait(false);
+        }
 
         var eventGuid = ExtractEventGuid(id);
         var cccEvent = await _apiClient.GetEventAsync(eventGuid, cancellationToken).ConfigureAwait(false);
@@ -266,7 +302,7 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
 
     // ── Root ──────────────────────────────────────────────
 
-    private static ChannelItemResult GetRootItems()
+    private async Task<ChannelItemResult> GetRootItems(CancellationToken cancellationToken)
     {
         var items = new List<ChannelItemInfo>
         {
@@ -296,11 +332,178 @@ public partial class ChaosflixChannel : IChannel, IRequiresMediaInfoCallback, IS
             }
         };
 
+        // Only while something is on air: an empty "Live now" folder sitting there all
+        // year would be worse than no folder at all (#71).
+        if ((await LiveRoomsAsync(cancellationToken).ConfigureAwait(false)).Count > 0)
+        {
+            items.Insert(0, new ChannelItemInfo
+            {
+                Name = "🔴 Live now",
+                Id = FolderLive,
+                Type = ChannelItemType.Folder,
+                FolderType = ChannelFolderType.Container,
+                Overview = "Rooms streaming right now"
+            });
+        }
+
         return new ChannelItemResult
         {
             Items = items,
             TotalRecordCount = items.Count
         };
+    }
+
+    // ── Live ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Every room on air, paired with the conference it belongs to. A conference that
+    /// says it is not currently streaming is skipped even if it still lists rooms, and so
+    /// is a room with nothing playable in it.
+    /// </summary>
+    private async Task<List<(CccLiveConference Conference, CccLiveRoom Room)>> LiveRoomsAsync(
+        CancellationToken cancellationToken)
+    {
+        var conferences = await _apiClient.GetLiveConferencesAsync(cancellationToken).ConfigureAwait(false);
+
+        return conferences
+            .Where(c => c.IsCurrentlyStreaming)
+            .SelectMany(c => c.Groups.SelectMany(g => g.Rooms).Select(r => (Conference: c, Room: r)))
+            .Where(x => PlayableStreams(x.Room).Count > 0)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The stream variants worth offering, best first: pictures before slides before
+    /// audio, the floor language before an interpreter's channel, and the larger picture
+    /// first. Only HLS and WebM are kept — DASH needs a manifest reader Jellyfin does not
+    /// bring for a channel item.
+    /// </summary>
+    private static List<(CccLiveStreamVariant Variant, string Protocol, string Url)> PlayableStreams(CccLiveRoom room)
+    {
+        var playable = new List<(CccLiveStreamVariant Variant, string Protocol, string Url)>();
+
+        foreach (var variant in room.Streams)
+        {
+            foreach (var protocol in LiveProtocols)
+            {
+                if (variant.Urls.TryGetValue(protocol, out var url) && !string.IsNullOrWhiteSpace(url.Url))
+                {
+                    playable.Add((variant, protocol, url.Url));
+                    break;
+                }
+            }
+        }
+
+        return playable
+            .OrderBy(x => Array.IndexOf(LiveTypeOrder, x.Variant.Type) is var rank && rank >= 0 ? rank : LiveTypeOrder.Length)
+            .ThenBy(x => x.Variant.IsTranslated ? 1 : 0)
+            .ThenByDescending(x => x.Variant.VideoSize is { Count: > 0 } size ? size[0] : 0)
+            .ThenBy(x => x.Variant.Slug, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private async Task<ChannelItemResult> GetLiveItems(CancellationToken cancellationToken)
+    {
+        var items = (await LiveRoomsAsync(cancellationToken).ConfigureAwait(false))
+            .Select(x => MapRoomToChannelItem(x.Conference, x.Room))
+            .ToList();
+
+        return new ChannelItemResult { Items = items, TotalRecordCount = items.Count };
+    }
+
+    private static ChannelItemInfo MapRoomToChannelItem(CccLiveConference conference, CccLiveRoom room)
+    {
+        var current = room.Talks?.Current?.Title;
+
+        return new ChannelItemInfo
+        {
+            Name = string.IsNullOrWhiteSpace(current) ? room.Display : $"{room.Display}: {current}",
+            Id = $"{PrefixLive}{conference.Slug}:{room.Slug}",
+            Type = ChannelItemType.Media,
+            MediaType = ChannelMediaType.Video,
+            ContentType = ChannelMediaContentType.Clip,
+            IsLiveStream = true,
+            ImageUrl = room.Thumb,
+            HomePageUrl = room.Link,
+            SeriesName = conference.Conference,
+            Overview = BuildLiveOverview(conference, room),
+
+            // No RunTimeTicks on purpose: a live room has no length, and a number here
+            // would make clients draw a progress bar over something that never ends.
+        };
+    }
+
+    private static string BuildLiveOverview(CccLiveConference conference, CccLiveRoom room)
+    {
+        var lines = new List<string> { $"{conference.Conference} · {room.Display} · live" };
+
+        if (room.Talks?.Current is { } current && !string.IsNullOrWhiteSpace(current.Title))
+        {
+            lines.Add(string.IsNullOrWhiteSpace(current.Speaker)
+                ? $"Now: {current.Title}"
+                : $"Now: {current.Title} — {current.Speaker}");
+        }
+
+        if (room.Talks?.Next is { } next && !string.IsNullOrWhiteSpace(next.Title))
+        {
+            lines.Add(string.IsNullOrWhiteSpace(next.Speaker)
+                ? $"Next: {next.Title}"
+                : $"Next: {next.Title} — {next.Speaker}");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// The media sources of a live room, straight from c3voc. These are not proxied: the
+    /// reason the recordings are (a cross-domain CDN redirect ExoPlayer will not follow)
+    /// does not apply to an HLS manifest served directly.
+    /// </summary>
+    private async Task<List<MediaSourceInfo>> LiveSourcesAsync(string id, CancellationToken cancellationToken)
+    {
+        var parts = id[PrefixLive.Length..].Split(':', 2);
+        if (parts.Length != 2)
+        {
+            return new List<MediaSourceInfo>();
+        }
+
+        var match = (await LiveRoomsAsync(cancellationToken).ConfigureAwait(false))
+            .FirstOrDefault(x =>
+                string.Equals(x.Conference.Slug, parts[0], StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.Room.Slug, parts[1], StringComparison.OrdinalIgnoreCase));
+
+        if (match.Room == null)
+        {
+            _logger.LogDebug("Live room {Id} is no longer on air", id);
+            return new List<MediaSourceInfo>();
+        }
+
+        return PlayableStreams(match.Room)
+            .Select((stream, i) => new MediaSourceInfo
+            {
+                Id = DeterministicGuid($"{id}|{stream.Variant.Slug}|{stream.Protocol}").ToString("N"),
+                Name = LiveSourceName(stream.Variant, stream.Protocol),
+                Path = stream.Url,
+                Protocol = MediaProtocol.Http,
+                Container = stream.Protocol == "hls" ? "ts" : "webm",
+                IsInfiniteStream = true,
+                IsRemote = true,
+                RequiresOpening = false,
+                RequiresClosing = false,
+                SupportsProbing = true,
+                SupportsDirectPlay = true,
+                SupportsDirectStream = true,
+                SupportsTranscoding = true,
+                VideoType = VideoType.VideoFile
+            })
+            .ToList();
+    }
+
+    private static string LiveSourceName(CccLiveStreamVariant variant, string protocol)
+    {
+        var quality = variant.VideoSize is { Count: > 1 } size ? $"{size[0]}x{size[1]}" : variant.Type;
+        var language = variant.IsTranslated ? "translated" : "native";
+        return $"{quality} · {language} · {protocol.ToUpperInvariant()}";
     }
 
     // ── Popular ──────────────────────────────────────────

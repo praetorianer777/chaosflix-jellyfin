@@ -213,10 +213,53 @@ const listEvent = (event) => {
 	return rest;
 };
 
+// streaming.media.ccc.de answers with an empty list outside a congress and with a
+// conference on air during one. Both are served, under different prefixes, so a test can
+// pick the state it needs instead of depending on the calendar (#71).
+const LIVE_CONFERENCE = {
+	conference: "E2E Congress 2025",
+	slug: "e2e-congress",
+	isCurrentlyStreaming: true,
+	groups: [
+		{
+			group: "Live",
+			rooms: [
+				{
+					slug: "hall-e2e",
+					display: "Hall E2E",
+					thumb: "http://fake-ccc:3000/static/thumb.png",
+					link: "http://fake-ccc:3000/live/hall-e2e",
+					talks: {
+						current: { title: "Live opening", speaker: "Erika Emcee" },
+						next: { title: "Live closing" },
+					},
+					streams: [
+						{
+							slug: "hd-native",
+							display: "1920x1080",
+							type: "video",
+							isTranslated: false,
+							videoSize: [1920, 1080],
+							urls: {
+								hls: {
+									display: "1920x1080 HLS",
+									tech: "hls",
+									url: "http://fake-ccc:3000/cdn/live.m3u8",
+								},
+							},
+						},
+					],
+				},
+			],
+		},
+	],
+};
+
 const ALL_EVENTS = [...EVENTS, ...ARCHIVE_EVENTS];
 
 module.exports = {
 	CONFERENCE,
+	liveStreams: (onAir) => (onAir ? [LIVE_CONFERENCE] : []),
 	ARCHIVE,
 	EVENTS,
 	conferenceList: () => ({

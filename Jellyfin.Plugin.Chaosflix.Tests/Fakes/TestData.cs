@@ -19,6 +19,53 @@ public static class TestData
         Events = events.Length > 0 ? events.ToList() : null
     };
 
+    /// <summary>
+    /// A stream variant as streaming.media.ccc.de publishes it. The url shapes are taken
+    /// from a recorded streams.v2.json, not invented.
+    /// </summary>
+    public static CccLiveStreamVariant LiveStream(
+        string slug,
+        string type = "video",
+        bool translated = false,
+        int? width = null,
+        params (string Protocol, string Url)[] urls) => new()
+    {
+        Slug = slug,
+        Display = slug,
+        Type = type,
+        IsTranslated = translated,
+        VideoSize = width is null ? null : [width.Value, width.Value * 9 / 16],
+        Urls = urls.ToDictionary(u => u.Protocol, u => new CccLiveStreamUrl { Url = u.Url, Tech = u.Protocol })
+    };
+
+    public static CccLiveRoom LiveRoom(
+        string slug,
+        string display,
+        string? currentTalk = null,
+        string? nextTalk = null,
+        params CccLiveStreamVariant[] streams) => new()
+    {
+        Slug = slug,
+        Display = display,
+        Thumb = $"https://streaming.media.ccc.de/{slug}.png",
+        Link = $"https://streaming.media.ccc.de/{slug}",
+        Talks = new CccLiveTalks
+        {
+            Current = currentTalk is null ? null : new CccLiveTalk { Title = currentTalk, Speaker = "Live Speaker" },
+            Next = nextTalk is null ? null : new CccLiveTalk { Title = nextTalk }
+        },
+        Streams = streams.ToList()
+    };
+
+    public static CccLiveConference LiveConference(
+        string slug, bool streaming, params CccLiveRoom[] rooms) => new()
+    {
+        Slug = slug,
+        Conference = slug.ToUpperInvariant(),
+        IsCurrentlyStreaming = streaming,
+        Groups = [new CccLiveGroup { Group = "Live", Rooms = rooms.ToList() }]
+    };
+
     public static CccEvent Event(
         string guid,
         int views = 0,

@@ -7,6 +7,7 @@ import {
 	conferenceFolder,
 	conferenceFolders,
 	loginUi,
+	setPluginConfig,
 	runScheduledTask,
 	talkNamed,
 	userId,
@@ -162,6 +163,33 @@ test.describe("browsing the channel", () => {
 
 		expect(similar.Items.map((i) => i.Name)).toContain("Two stream talk");
 		expect(similar.Items.map((i) => i.Id)).toContain(related.Id);
+	});
+
+	test("a room on air shows up as a live folder and disappears again", async () => {
+		const api = await apiContext();
+
+		// The fake streaming endpoint serves a fixed "nothing on air" and a fixed "one
+		// room on air" under different prefixes, so this does not depend on whether a
+		// congress happens to be running. Global setup points at the idle one (#71).
+		expect((await channelItems(api)).map((i) => i.Name)).not.toContain(
+			"🔴 Live now",
+		);
+
+		try {
+			await setPluginConfig(api, { StreamingBaseUrl: "http://fake-ccc:3000/live" });
+
+			await expect
+				.poll(async () => (await channelItems(api)).map((i) => i.Name))
+				.toContain("🔴 Live now");
+
+			const live = (await channelItems(api)).find((i) =>
+				i.Name.includes("Live now"),
+			)!;
+			const rooms = await channelItems(api, live.Id);
+			expect(rooms.map((r) => r.Name)).toEqual(["Hall E2E: Live opening"]);
+		} finally {
+			await setPluginConfig(api, { StreamingBaseUrl: "http://fake-ccc:3000/idle" });
+		}
 	});
 
 	// #54: "Recently Added in Chaosflix" is fed by
