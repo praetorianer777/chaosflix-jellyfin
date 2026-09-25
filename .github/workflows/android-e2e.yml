@@ -83,7 +83,11 @@ jobs:
             e2e/android/.artifacts/*.log
             e2e/android/.artifacts/*.png
             e2e/android/.artifacts/*.txt
-          if-no-files-found: ignore
+          # .artifacts is a hidden directory, and upload-artifact skips hidden
+          # files by default — without this the step matched nothing and every
+          # red nightly was undiagnosable (#123).
+          include-hidden-files: true
+          if-no-files-found: warn
 
       - name: Stop the Jellyfin stack
         if: always()
