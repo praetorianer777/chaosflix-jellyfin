@@ -18,7 +18,7 @@ All content is sourced from [media.ccc.de](https://media.ccc.de) via their publi
 - 🔗 **Related Talks** — CCC's weighted recommendations fill the "More like this"
   row of any client, for the talks your library holds
 - 🏷️ **Tags as Genres** — filter by topic (security, ethics, hardware…)
-- 👤 **Speaker metadata** — see all talks by a specific person
+- 👤 **Browse by speaker** — every talk a person has given, across all conferences
 - 🕐 **Watch history & resume** — powered by Jellyfin (per-user, cross-device)
 - 👥 **SyncPlay** — watch together with multiple users
 - 🆕 **Latest talks** — newly released recordings on your home screen
@@ -80,6 +80,9 @@ proxy url, proxy reachability and stream probe — and names the stage that fail
 
 ```
 Chaosflix
+├── 🔴 Live now               ← only while a congress is on air
+│   ├── Saal 1: current talk  ▶️
+│   └── Saal ZIGZAG: …        ▶️
 ├── 🔥 Popular Talks          ← Top 50 by view count
 ├── ⭐ Recommended             ← Trending (views × recency)
 └── 📅 Browse by Year
@@ -95,6 +98,27 @@ Chaosflix
     │   └── ...
     └── ...
 ```
+
+### Speakers and topics
+
+Talks are not only reachable through the folders. Every talk carries its
+speakers and its tags, and Jellyfin indexes both, so two more ways in exist
+without the channel offering a folder for them.
+
+**By speaker** works in any client: open a talk, click a name in its cast list,
+and you get that person's other talks — across every conference your library
+holds, not just the one you came from. Over the API that is
+`/Persons` for the list and `/Items?personIds=<id>&recursive=true` for one
+person's talks.
+
+**By topic** works as a filter, but there is no list to pick from:
+`/Items?genres=Security` returns the right talks, while Jellyfin's genre
+browse stays empty for them — see Known Limitations.
+
+Neither costs anything: they use the talks already in the library rather than
+listing them a second time, which a channel folder would (see Known
+Limitations). Which talks are in the library is decided by the **Conferences**
+setting below.
 
 ## Configuration
 
@@ -118,6 +142,12 @@ or a single acronym like `38c3`. The filter also applies to Popular,
 Recommended and the latest row, so they are drawn from the same conferences as
 the folders, and the plugin stops fetching the details of everything else.
 Left empty, nothing is filtered.
+
+**Streaming Endpoint** is where the plugin asks which rooms are on air, which
+is what fills 🔴 Live now. Left empty it uses the public one at
+`streaming.media.ccc.de`; point it elsewhere for a mirror, or at a local
+stand-in when testing. Outside a congress the endpoint reports nothing and the
+folder is not shown at all.
 
 Naming your conferences also makes their talks **findable by name**. Jellyfin
 creates a channel item the first time something asks for the folder holding it
@@ -344,6 +374,14 @@ container fallback — that path was broken for as long as nothing ran it.
   which here is an http url. `/Items/{id}/Download` then serves that path off
   disk, so there is nothing for it to send
   ([#90](https://github.com/praetorianer777/chaosflix-jellyfin/issues/90)).
+- Topics can be filtered but not browsed. A talk's tags are mapped to genres
+  and filtering by one works (`/Items?genres=Security`), but Jellyfin's genre
+  browse lists nothing: it builds genre entities during a library scan, which
+  channel items never go through. Asking Jellyfin to create them turns out not
+  to be enough either — with them present, `/Genres` listed three of five while
+  all five resolved correctly by id and by name, stable across a restart, so the
+  listing is unreliable independently of this plugin
+  ([#88](https://github.com/praetorianer777/chaosflix-jellyfin/issues/88)).
 - Playback runs through `/api/ChaosflixStream/proxy` with a signed url rather
   than straight from the CDN: ExoPlayer cannot follow the CDN's cross-domain
   redirects, so mirror failover, range requests and redirects are resolved
