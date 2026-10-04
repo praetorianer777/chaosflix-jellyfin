@@ -55,7 +55,15 @@ cleanup() {
 	if ((status != 0)); then
 		mkdir -p "$ARTIFACTS_DIR"
 		adb -s "$EMULATOR_SERIAL" exec-out screencap -p >"$ARTIFACTS_DIR/failure.png" 2>/dev/null || true
-		adb -s "$EMULATOR_SERIAL" logcat -d -t 400 >"$ARTIFACTS_DIR/logcat.txt" 2>/dev/null || true
+		# The whole buffer, not a tail: it is cleared just before the flows start,
+		# so what is left is the run itself. A tail only ever caught the teardown
+		# that happens after Maestro has already given up (#125).
+		adb -s "$EMULATOR_SERIAL" logcat -d >"$ARTIFACTS_DIR/logcat.txt" 2>/dev/null || true
+		# Whether the app ever asked Jellyfin to authenticate, and what it answered,
+		# is the difference between "the form was never filled" and "the credentials
+		# were rejected" — and it is only visible from the server side.
+		(cd "$E2E_DIR" && docker compose logs --no-color --timestamps jellyfin) \
+			>"$ARTIFACTS_DIR/jellyfin.log" 2>/dev/null || true
 		warn "Failure artifacts in $ARTIFACTS_DIR"
 	fi
 	if [[ -z "${ANDROID_E2E_KEEP:-}" ]]; then
@@ -88,6 +96,7 @@ JELLYFIN_TOKEN="$TOKEN" node verify-session.mjs >"$ARTIFACTS_DIR/session.log" 2>
 VERIFIER=$!
 
 log "Running Maestro flows"
+adb -s "$EMULATOR_SERIAL" logcat -c >/dev/null 2>&1 || true
 set +e
 maestro --device "$EMULATOR_SERIAL" test \
 	--env SERVER_URL="$JELLYFIN_URL_FROM_EMULATOR" \
